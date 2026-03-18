@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://memory.equistamp.io/telemetry",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer user_6e684edbe76fce84abd5ebde24f0a9ac158c31bb4e9310c992bd04e440de338a",
+    "MEMORY_API_URL": "https://memory.equistamp.io/",
+    "MEMORY_API_TOKEN": "user_6e684edbe76fce84abd5ebde24f0a9ac158c31bb4e9310c992bd04e440de338a"
+  },
+  "permissions": {
+    "allow": [
+      "mcp__memory-system__meta_get_user",
+      "mcp__plugin_equistamp-all_equistamp__core_search",
+      "mcp__plugin_equistamp-all_equistamp__core_note_files",
+      "mcp__plugin_equistamp-all_equistamp__core_fetch_file",
+      "mcp__plugin_equistamp-all_equistamp__core_get_item",
+      "mcp__plugin_equistamp-all_equistamp__core_list_items",
+      "mcp__plugin_equistamp-all_equistamp__core_count_items",
+      "mcp__plugin_equistamp-all_equistamp__github_list_entities",
+      "mcp__plugin_equistamp-all_equistamp__github_fetch",
+      "mcp__plugin_equistamp-all_equistamp__organizer_get_upcoming",
+      "mcp__plugin_equistamp-all_equistamp__organizer_list_tasks",
+      "mcp__plugin_equistamp-all_equistamp__organizer_get_task",
+      "mcp__memory-system__organizer_create_task",
+      "mcp__plugin_equistamp-all_equistamp__people_get_person",
+      "mcp__plugin_equistamp-all_equistamp__people_list_people",
+      "mcp__plugin_equistamp-all_equistamp__polling_list_polls",
+      "mcp__plugin_equistamp-all_equistamp__polling_get_poll",
+      "mcp__plugin_equistamp-all_equistamp__schedule_list_calls",
+      "mcp__plugin_equistamp-all_equistamp__schedule_get_call",
+      "mcp__plugin_equistamp-all_equistamp__meta_get_metadata_schemas",
+      "mcp__plugin_equistamp-all_equistamp__meta_get_current_time",
+      "mcp__plugin_equistamp-all_equistamp__meta_get_user",
+      "mcp__plugin_equistamp-all_equistamp__meta_get_forecasts",
+      "mcp__plugin_equistamp-all_equistamp-admin__contributor",
+      "mcp__plugin_equistamp-all_equistamp-admin__reference",
+      "mcp__plugin_equistamp-all_equistamp-admin__client",
+      "mcp__plugin_equistamp-all_equistamp-admin__project",
+      "mcp__plugin_equistamp-all_equistamp-admin__issues",
+      "mcp__plugin_equistamp-all_equistamp-admin__financials",
+      "mcp__plugin_equistamp-all_equistamp-admin__team",
+      "mcp__plugin_equistamp-all_equistamp-admin__upcoming",
+      "Skill(fix-review)",
+      "Skill(fix-review:*)",
+      "Bash(~/.claude/hooks/spawn-claude.sh:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude/hooks/choose_name.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude/hooks/choose_name.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/stop-check.sh",
+            "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "python ~/.claude/hooks/claude_session_hook.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify-on-stop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify-on-stop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clj-paren-repair-claude-hook --cljfmt"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/block-gh.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clj-paren-repair-claude-hook --cljfmt"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "equistamp-all@equistamp-skills": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true
+  },
+  "feedbackSurveyState": {
+    "lastShownTime": 1754166832429
+  },
+  "effortLevel": "high"
+}

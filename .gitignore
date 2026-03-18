@@ -1,0 +1,52 @@
+# Session data & transcripts
+projects/
+sessions/
+session-env/
+plans/
+tasks/
+teams/
+
+# Auto-memory (regenerated per-project)
+projects/*/memory/
+
+# Caches
+cache/
+chrome/
+file-history/
+image-cache/
+paste-cache/
+shell-snapshots/
+stats-cache.json
+statsig/
+telemetry/
+mcp-needs-auth-cache.json
+
+# Credentials & secrets
+credentials*
+.oauth*
+
+# IDE integration state
+ide/
+
+# History
+history.jsonl
+
+# Debug logs
+debug/
+
+# Plugin runtime state
+plugins/
+
+# Backups (if managed separately)
+backups/
+
+# Agent/task runtime state
+todos/
+agents/
+
+# Usage data / analytics
+usage-data/
+
+# Misc
+*.pyc
+__pycache__/
