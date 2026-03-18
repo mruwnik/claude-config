@@ -7,9 +7,7 @@
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "https://memory.equistamp.io/telemetry",
-    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer user_6e684edbe76fce84abd5ebde24f0a9ac158c31bb4e9310c992bd04e440de338a",
-    "MEMORY_API_URL": "https://memory.equistamp.io/",
-    "MEMORY_API_TOKEN": "user_6e684edbe76fce84abd5ebde24f0a9ac158c31bb4e9310c992bd04e440de338a"
+    "MEMORY_API_URL": "https://memory.equistamp.io/"
   },
   "permissions": {
     "allow": [

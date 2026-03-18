@@ -15,6 +15,10 @@ Selection criteria:
 
 import random
 import argparse
+import glob
+import json
+import os
+import sys
 from typing import NamedTuple, Optional
 
 
@@ -872,6 +876,23 @@ Examples:
         print(f"   Source: {chosen.source}")
         if chosen.note:
             print(f"   {chosen.note}")
+
+    # When run as a hook, save name to session metadata
+    try:
+        hook_input = json.loads(sys.stdin.read()) if not sys.stdin.isatty() else {}
+        session_id = hook_input.get("session_id", "")
+        if session_id and args.n > 0:
+            for path in glob.glob(os.path.expanduser("~/.claude/sessions/*.json")):
+                with open(path) as f:
+                    data = json.load(f)
+                if data.get("sessionId") == session_id:
+                    data["name"] = chosen.name
+                    data["nameSource"] = chosen.source
+                    with open(path, "w") as f:
+                        json.dump(data, f)
+                    break
+    except Exception:
+        pass  # Don't break the hook if this fails
 
 
 if __name__ == "__main__":

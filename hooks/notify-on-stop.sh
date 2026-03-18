@@ -38,14 +38,46 @@ if [[ -n "$ACTIVE_TTY" && "$ACTIVE_TTY" == "$OUR_TTY" ]]; then
     exit 0
 fi
 
+# --- Identify the instance ---
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+PROJECT=$(basename "${CWD:-unknown}")
+
+# Look up session name from session metadata
+SESSION_NAME=""
+if [[ -n "$SESSION_ID" ]]; then
+    for f in ~/.claude/sessions/*.json; do
+        [[ -f "$f" ]] || continue
+        if jq -e --arg sid "$SESSION_ID" '.sessionId == $sid' "$f" >/dev/null 2>&1; then
+            SESSION_NAME=$(jq -r '.name // empty' "$f" 2>/dev/null)
+            break
+        fi
+    done
+fi
+
+INSTANCE="${SESSION_NAME:-$PROJECT}"
+
 # --- Determine event type and build notification ---
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 
 if [[ -n "$TOOL_NAME" ]]; then
-    # PermissionRequest: notify immediately
-    TITLE="Claude Code — Waiting"
-    BODY="Approve ${TOOL_NAME}?"
+    # PermissionRequest — show tool params
+    TITLE="${INSTANCE} — Approve ${TOOL_NAME}?"
+    TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // empty')
+    case "$TOOL_NAME" in
+        Bash)
+            BODY=$(echo "$TOOL_INPUT" | jq -r '.command // empty' | head -c 200) ;;
+        Edit)
+            BODY=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty') ;;
+        Write)
+            BODY=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty') ;;
+        Read)
+            BODY=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty') ;;
+        *)
+            BODY=$(echo "$TOOL_INPUT" | jq -c '.' 2>/dev/null | head -c 200) ;;
+    esac
+    BODY="${BODY:-$TOOL_NAME}"
 
 elif [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
     # Stop: check elapsed time, show summary
@@ -70,8 +102,13 @@ elif [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
         TIME_STR="${ELAPSED}s"
     fi
 
-    SUMMARY=$(grep '"type":"assistant"' "$TRANSCRIPT_PATH" | tail -5 | jq -r '.message.content[]? | select(.type == "text") | .text' 2>/dev/null | tail -1 | head -c 120)
-    TITLE="Claude Code (${TIME_STR})"
+    # Use last_assistant_message from stdin if available, fall back to transcript
+    SUMMARY=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' | head -c 120)
+    if [[ -z "$SUMMARY" ]]; then
+        SUMMARY=$(grep '"type":"assistant"' "$TRANSCRIPT_PATH" | tail -5 | jq -r '.message.content[]? | select(.type == "text") | .text' 2>/dev/null | tail -1 | head -c 120)
+    fi
+
+    TITLE="${INSTANCE} — Done (${TIME_STR})"
     BODY="${SUMMARY:-Done}"
 
 else
