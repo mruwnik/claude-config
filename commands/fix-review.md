@@ -1,17 +1,15 @@
 ---
 description: Fix all unresolved review comments from differ-review
 allowed-tools: Bash(git:*), Read, Write, Edit, Glob, Grep, mcp__differ-review__*
-run-as: subagent
 ---
 
 Fix all unresolved review comments in the current differ-review session.
 
-**Name attribution:** Use the assigned name passed to you (from SessionStart hook) for all `add_comment` and `resolve_comment` calls.
-
 ## Steps
 
 1. Get the review session using `mcp__differ-review__get_or_create_session` with the current repo path
-2. Get pending feedback using `mcp__differ-review__get_pending_feedback`
+2. Generate a name using `mcp__differ-review__random_name()` — use this as `author` for all comments
+3. Get pending feedback using `mcp__differ-review__get_pending_feedback`
 3. For each unresolved comment:
    - Read the relevant file and understand the context
    - Implement the fix or improvement suggested

@@ -13,27 +13,27 @@
     "allow": [
       "mcp__memory-system__meta_get_user",
       "mcp__plugin_equistamp-all_equistamp__core_search",
-      "mcp__plugin_equistamp-all_equistamp__core_note_files",
+      "mcp__plugin_equistamp-all_equistamp__notes_note_files",
       "mcp__plugin_equistamp-all_equistamp__core_fetch_file",
-      "mcp__plugin_equistamp-all_equistamp__core_get_item",
+      "mcp__plugin_equistamp-all_equistamp__core_fetch",
       "mcp__plugin_equistamp-all_equistamp__core_list_items",
       "mcp__plugin_equistamp-all_equistamp__core_count_items",
       "mcp__plugin_equistamp-all_equistamp__github_list_entities",
       "mcp__plugin_equistamp-all_equistamp__github_fetch",
-      "mcp__plugin_equistamp-all_equistamp__organizer_get_upcoming",
+      "mcp__plugin_equistamp-all_equistamp__organizer_upcoming",
       "mcp__plugin_equistamp-all_equistamp__organizer_list_tasks",
-      "mcp__plugin_equistamp-all_equistamp__organizer_get_task",
+      "mcp__plugin_equistamp-all_equistamp__organizer_fetch",
       "mcp__memory-system__organizer_create_task",
-      "mcp__plugin_equistamp-all_equistamp__people_get_person",
-      "mcp__plugin_equistamp-all_equistamp__people_list_people",
+      "mcp__plugin_equistamp-all_equistamp__people_fetch",
+      "mcp__plugin_equistamp-all_equistamp__people_list_all",
       "mcp__plugin_equistamp-all_equistamp__polling_list_polls",
-      "mcp__plugin_equistamp-all_equistamp__polling_get_poll",
-      "mcp__plugin_equistamp-all_equistamp__schedule_list_calls",
-      "mcp__plugin_equistamp-all_equistamp__schedule_get_call",
+      "mcp__plugin_equistamp-all_equistamp__polling_fetch",
+      "mcp__plugin_equistamp-all_equistamp__scheduler_list_all",
+      "mcp__plugin_equistamp-all_equistamp__scheduler_executions",
       "mcp__plugin_equistamp-all_equistamp__meta_get_metadata_schemas",
       "mcp__plugin_equistamp-all_equistamp__meta_get_current_time",
       "mcp__plugin_equistamp-all_equistamp__meta_get_user",
-      "mcp__plugin_equistamp-all_equistamp__meta_get_forecasts",
+      "mcp__plugin_equistamp-all_equistamp__forecast_get_forecasts",
       "mcp__plugin_equistamp-all_equistamp-admin__contributor",
       "mcp__plugin_equistamp-all_equistamp-admin__reference",
       "mcp__plugin_equistamp-all_equistamp-admin__client",
@@ -44,16 +44,20 @@
       "mcp__plugin_equistamp-all_equistamp-admin__upcoming",
       "Skill(fix-review)",
       "Skill(fix-review:*)",
-      "Bash(~/.claude/hooks/spawn-claude.sh:*)"
-    ]
+      "Bash(~/.claude/hooks/spawn-claude.sh:*)",
+      "Bash(~/.claude/hooks/end-session.sh:*)",
+      "Update(.claude/napkin.md)"
+    ],
+    "defaultMode": "default"
   },
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude/hooks/choose_name.py"
+            "command": "python3 ~/.claude/hooks/choose_name.py"
           }
         ]
       }
@@ -63,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude/hooks/choose_name.py"
+            "command": "python3 ~/.claude/hooks/choose_name.py"
           }
         ]
       }
@@ -78,7 +82,7 @@
           },
           {
             "type": "command",
-            "command": "python ~/.claude/hooks/claude_session_hook.py"
+            "command": "python3 ~/.claude/hooks/claude_session_hook.py"
           }
         ]
       },
@@ -140,14 +144,28 @@
     "command": "bash ~/.claude/statusline-command.sh"
   },
   "enabledPlugins": {
-    "equistamp-all@equistamp-skills": true,
     "pyright-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true
+    "superpowers@claude-plugins-official": true,
+    "equistamp-all@equistamp-skills": true,
+    "security-guidance@claude-plugins-official": true
   },
+  "extraKnownMarketplaces": {
+    "equistamp-skills": {
+      "source": {
+        "source": "github",
+        "repo": "EquiStamp/equistamp-skills"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "skipWorkflowUsageWarning": true,
+  "autoCompactEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "useAutoModeDuringPlan": false,
+  "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754166832429
-  },
-  "effortLevel": "high"
+  }
 }
