@@ -50,7 +50,7 @@
     ],
     "defaultMode": "default"
   },
-  "model": "claude-fable-5[1m]",
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -75,11 +75,6 @@
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/stop-check.sh",
-            "timeout": 60
-          },
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/claude_session_hook.py"
