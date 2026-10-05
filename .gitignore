@@ -23,6 +23,7 @@ mcp-needs-auth-cache.json
 
 # Credentials & secrets
 credentials*
+.credentials*
 .oauth*
 
 # IDE integration state
