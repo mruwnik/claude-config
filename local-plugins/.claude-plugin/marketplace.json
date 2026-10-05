@@ -1,0 +1,7 @@
+{
+  "name": "local-plugins",
+  "owner": { "name": "local" },
+  "plugins": [
+    { "name": "md-view", "source": "./md-view", "description": "Render a markdown doc in a live-updating pane" }
+  ]
+}

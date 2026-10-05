@@ -50,3 +50,7 @@ usage-data/
 # Misc
 *.pyc
 __pycache__/
+
+# Plugin dev: per-session hot-reload folders, and types the engine writes into each plugin
+dev-mods/
+local-plugins/*/.claude-plugin/types/

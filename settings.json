@@ -144,13 +144,20 @@
     "rust-analyzer-lsp@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
     "equistamp-all@equistamp-skills": true,
-    "security-guidance@claude-plugins-official": true
+    "security-guidance@claude-plugins-official": true,
+    "md-view@local-plugins": true
   },
   "extraKnownMarketplaces": {
     "equistamp-skills": {
       "source": {
         "source": "github",
         "repo": "EquiStamp/equistamp-skills"
+      }
+    },
+    "local-plugins": {
+      "source": {
+        "source": "directory",
+        "path": "/home/dan/.claude/local-plugins"
       }
     }
   },
