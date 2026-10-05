@@ -58,7 +58,7 @@ Tools and skills are actively developed and often have bugs. If you hit one, ask
 - The `mcp__memory-system__*` and `mcp__plugin_equistamp-all_equistamp__*` prefixes run the **same code** over **different data sources** — NOT aliases. An item in one won't appear in the other; never cross-check one against the other. Personal → memory-system; company → equistamp.
 - `gh` is not installed — don't use it.
 
-When you're **processing** (filtering/summarizing) rather than displaying the results of high-context tools (`core_search`, `books_list_books`, `core_list_items`, `organizer_*`, `get_session_diff`), delegate to a subagent (Task/Explore) to keep the context lean.
+When you're **processing** (filtering/summarizing) rather than displaying the results of high-context tools (`core_search`, `books_list_books`, `core_list_items`, `organizer_*`, `get_session_diff`), delegate to a subagent (Agent/Explore) to keep the context lean.
 
 ---
 

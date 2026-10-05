@@ -31,26 +31,9 @@ clj-nrepl-eval --discover-ports
 
 This will show all nREPL servers (Clojure, Babashka, shadow-cljs, etc.) running in the current project directory.
 
-**Then use the AskUserQuestion tool:**
+Then ask the user (AskUserQuestion) which discovered port to use, labelling each with its server type; if none were found, ask how they want to start one (a deps.edn nREPL alias, `lein repl`, or a port they already have running).
 
-- **If ports are discovered:** Prompt user to select which nREPL port to use:
-  - **question:** "Which nREPL port would you like to use?"
-  - **header:** "nREPL Port"
-  - **options:** Present each discovered port as an option with:
-    - **label:** The port number 
-    - **description:** The server type and status (e.g., "Clojure nREPL server in current directory")
-  - Include up to 4 discovered ports as options
-  - The user can select "Other" to enter a custom port number
-
-- **If no ports are discovered:** Prompt user how to start an nREPL server:
-  - **question:** "No nREPL servers found. How would you like to start one?"
-  - **header:** "Start nREPL"
-  - **options:**
-    - **label:** "deps.edn alias", **description:** "Find and use an nREPL alias in deps.edn"
-    - **label:** "Leiningen", **description:** "Start nREPL using 'lein repl'"
-  - The user can select "Other" for alternative methods or if they already have a server running on a specific port
-
-IMPORTANT: IF you start a REPL do not supply a port let the nREPL start and return the port that it was started on.
+When you start an nREPL server, don't pass a port: let it pick one and read the port it reports, so you don't collide with a server that's already running.
 
 ### 1. Evaluate Clojure Code
 

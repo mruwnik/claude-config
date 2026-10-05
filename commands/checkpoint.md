@@ -10,11 +10,11 @@ Context: $ARGUMENTS
 
 ## 1. Identify Scope
 
-Determine the base branch:
+Determine the base branch (`master` or `main`, whichever exists — call it `<base>`):
 ```bash
 git rev-parse --abbrev-ref HEAD        # current branch
-git log --oneline master..HEAD         # commits since divergence
-git diff --stat master...HEAD          # files changed summary
+git log --oneline <base>..HEAD         # commits since divergence
+git diff --stat <base>...HEAD          # files changed summary
 ```
 
 Report: current branch, number of commits since master, files changed.
