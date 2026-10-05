@@ -31,6 +31,11 @@ export type MdViewView = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'md-view': { doc: MdViewDoc | null; view: MdViewView | null }
+    'md-view': {
+      doc: MdViewDoc | null
+      view: MdViewView | null
+      /** What the last Tab after `/md <partial>` could complete to, when more than one; null once another key is pressed. */
+      candidates: string[] | null
+    }
   }
 }

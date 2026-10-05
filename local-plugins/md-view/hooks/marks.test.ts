@@ -23,7 +23,9 @@ test('markItems: offsets follow the new text, removed blocks sit where they were
 const OLD = '# Doc\n\nkept paragraph\n\nsecond paragraph about cats\n\nthird paragraph\n\ndoomed paragraph that goes away\n'
 const NEW = '# Doc\n\nkept paragraph\n\nsecond paragraph about cats and dogs\n\nthird paragraph\n\nbrand new addition\n'
 
-test('changed, removed and added blocks mark their rows; old and removed text are struck rows in place', () => {
+const tints = (rows: Row[]) => rows.filter(r => r.tint !== undefined).map(r => [r.tint, textOf(r).trimEnd()])
+
+test('changed, removed and added blocks mark their rows; a changed paragraph is diffed word by word in place', () => {
   const { rows, hunkRows } = layoutDoc(NEW, OLD, 60)
   expect(rows.map(r => textOf(r))).toEqual([
     'Doc',
@@ -32,7 +34,6 @@ test('changed, removed and added blocks mark their rows; old and removed text ar
     'kept paragraph',
     '',
     'second paragraph about cats and dogs',
-    'second paragraph about cats',
     '',
     'third paragraph',
     '',
@@ -42,13 +43,49 @@ test('changed, removed and added blocks mark their rows; old and removed text ar
   ])
   expect(marked(rows)).toEqual([
     ['changed', 'second paragraph about cats and dogs'],
-    ['changed', 'second paragraph about cats'],
     ['removed', 'doomed paragraph that goes away'],
     ['added', 'brand new addition'],
   ])
+  // whole rows tinted for whole blocks; a changed paragraph tints only its changed words
+  expect(tints(rows)).toEqual([
+    ['removed', 'doomed paragraph that goes away'],
+    ['added', 'brand new addition'],
+  ])
+  expect((rows[5] as Row).spans.map(s => [s.text, s.backgroundColor ?? ''])).toEqual([
+    ['second paragraph about cats', ''],
+    [' and dogs', 'diffAddedWord'],
+  ])
   const struck = rows.filter(r => r.kind === 'old')
-  expect(struck.every(r => r.spans.every(s => s.strikethrough === true && s.dimColor === true))).toBe(true)
-  expect(hunkRows).toEqual([5, 10])
+  expect(struck.every(r => r.spans.every(s => s.strikethrough === true && s.dimColor !== true))).toBe(true)
+  expect(hunkRows).toEqual([5, 9])
+})
+
+test('a changed paragraph shows its removed words struck inline, before the words that replaced them', () => {
+  const { rows } = layoutDoc('a\n\nkeep this then new end\n', 'a\n\nkeep this then old end\n', 60)
+  const row = rows.find(r => r.mark === 'changed') as Row
+  expect(row.spans.map(s => [s.text, s.backgroundColor ?? '', s.strikethrough === true])).toEqual([
+    ['keep this then ', '', false],
+    ['old', 'diffRemovedWord', true],
+    ['new', 'diffAddedWord', false],
+    [' end', '', false],
+  ])
+  expect(rows.some(r => r.kind === 'old')).toBe(false)
+})
+
+test('a changed list item and heading are diffed inline too, keeping their bullet and style', () => {
+  const { rows } = layoutDoc('# New title\n\n- first item\n', '# Old title\n\n- first thing\n', 60)
+  expect(marked(rows).map(([, t]) => t)).toEqual(['OldNew title', '═'.repeat(12), '• first thingitem'])
+  expect(rows.some(r => r.kind === 'old')).toBe(false)
+})
+
+test('a changed code block is not diffed inline: its old rows are struck and tinted removed, its new rows tinted added', () => {
+  const { rows } = layoutDoc('a\n\n```\nnew code\n```\n', 'a\n\n```\nold code\n```\n', 60)
+  expect(tints(rows)).toEqual([
+    ['added', 'new code'],
+    ['removed', '```'],
+    ['removed', 'old code'],
+    ['removed', '```'],
+  ])
 })
 
 test('no baseline, or the same text, marks nothing', () => {

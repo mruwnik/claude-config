@@ -93,7 +93,7 @@ const OLD = '# Doc\n\nkept paragraph\n\nsecond paragraph about cats\n\nthird par
 const NEW = '# Doc\n\nkept paragraph\n\nsecond paragraph about cats and dogs\n\nthird paragraph\n\nbrand new addition\n'
 const A = '/work/a.md'
 
-test('a first open has no snapshot: nothing is marked and no error shows', async ($, on) => {
+test('a first open has no snapshot: nothing is marked yet and no error shows', async ($, on) => {
   const files: Files = new Map([[A, { text: NEW, mtimeMs: 1 }]])
   const { writes } = await started($, on, files)
   const out = await $.command.run(mdCommand(A))
@@ -107,6 +107,22 @@ test('a first open has no snapshot: nothing is marked and no error shows', async
     await ui.unmount()
   }
   expect(writes).toEqual([])
+})
+
+test('a first open marks edits that arrive while it is open against the text it opened with', async ($, on) => {
+  const files: Files = new Map([[A, { text: OLD, mtimeMs: 1 }]])
+  const { writes, clock } = await started($, on, files)
+  await $.command.run(mdCommand(A))
+  const ui = await $.ui.mount(pane('terminal'))
+  expect(await header(ui)).toBeUndefined()
+
+  files.set(A, { text: NEW, mtimeMs: 2 })
+  await clock.advance(1000)
+  expect(await header(ui)).toBe('2 changes since you last looked ·')
+  expect(await gutters(ui)).toEqual(['warning', 'error', 'success'])
+  // the baseline is kept in memory: nothing is written until the person stops viewing
+  expect(writes).toEqual([])
+  await ui.unmount()
 })
 
 for (const surface of SURFACES) {
@@ -127,18 +143,23 @@ for (const surface of SURFACES) {
       '  kept paragraph',
       '',
       '▌ second paragraph about cats and dogs',
-      '▌ second paragraph about cats',
       '',
       '  third paragraph',
       '',
       '▌ doomed paragraph that goes away',
       '',
       '▌ brand new addition',
+      '',
     ])
-    expect(await gutters(ui)).toEqual(['warning', 'warning', 'error', 'success'])
-    const struck = (await ui.findAll({ type: 'Text' })).filter(t => t.props.strikethrough === true)
-    expect(struck.map(t => t.text)).toEqual(['second paragraph about cats', 'doomed paragraph that goes away'])
-    expect(struck.every(t => t.props.dimColor === true)).toBe(true)
+    expect(await gutters(ui)).toEqual(['warning', 'error', 'success'])
+    const texts = await ui.findAll({ type: 'Text' })
+    const struck = texts.filter(t => t.props.strikethrough === true)
+    expect(struck.map(t => t.text)).toEqual(['doomed paragraph that goes away'])
+    // GitHub's rich diff: whole removed and added rows on the line backgrounds, changed words on the word ones
+    const backed = (color: string) => texts.filter(t => t.props.backgroundColor === color).map(t => t.text.trim())
+    expect(backed('diffRemoved')).toEqual(['▌ doomed paragraph that goes away'])
+    expect(backed('diffAdded')).toEqual(['▌ brand new addition'])
+    expect(backed('diffAddedWord')).toEqual(['and dogs'])
     await ui.unmount()
   })
 }
@@ -287,4 +308,83 @@ test('the session ending with no pane open saves nothing', async ($, on) => {
   const { writes } = await started($, on, new Map())
   await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } } as never)
   expect(writes).toEqual([])
+})
+
+const headLine = async (ui: Mounted) => flat(keyed(await ui.drawn(), 'head')?.children?.[0])
+const TWO_BEFORE = 'one\n\ntwo\n\nthree\n'
+const TWO_AFTER = 'ONE\n\ntwo\n\nTHREE\n'
+
+for (const surface of SURFACES) {
+  test(`on ${surface}, accept and reject show only once n has picked a change, and the header names it`, async ($, on) => {
+    const files: Files = new Map([[A, { text: TWO_AFTER, mtimeMs: 1 }], [snap(A), { text: TWO_BEFORE, mtimeMs: 1 }]])
+    await started($, on, files)
+    await $.command.run(mdCommand(A))
+    const ui = await $.ui.mount(pane(surface))
+    expect(await ui.find({ type: 'Button', key: 'accept-change' })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', key: 'reject-change' })).toBeUndefined()
+
+    await ui.press({ key: 'next-change' })
+    expect(await headLine(ui)).toMatch(/ · change 1 of 2 ·$/)
+    expect((await ui.find({ type: 'Button', key: 'accept-change' }))?.props.hotkey).toBe('a')
+    expect((await ui.find({ type: 'Button', key: 'reject-change' }))?.props.hotkey).toBe('r')
+    await ui.unmount()
+  })
+}
+
+test('accept stops marking the picked change, leaves the file alone, and picks the change now in its place', async ($, on) => {
+  const files: Files = new Map([[A, { text: TWO_AFTER, mtimeMs: 1 }], [snap(A), { text: TWO_BEFORE, mtimeMs: 1 }]])
+  const { writes } = await started($, on, files)
+  await $.command.run(mdCommand(A))
+  const ui = await $.ui.mount(pane('terminal'))
+  await ui.press({ key: 'next-change' })
+  await ui.press({ key: 'accept-change' })
+
+  expect(await headLine(ui)).toMatch(/ · change 1 of 1 ·$/)
+  expect(await gutters(ui)).toEqual(['warning'])
+  expect((await rowTexts(ui)).filter(r => r.startsWith('▌'))).toEqual(['▌ threeTHREE'])
+  expect(writes).toEqual([])
+
+  await ui.press({ key: 'accept-change' })
+  expect(await header(ui)).toBeUndefined()
+  expect(await gutters(ui)).toEqual([])
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  expect(writes).toEqual([])
+  await ui.unmount()
+})
+
+test('reject writes the picked change back as the baseline has it, and only that change', async ($, on) => {
+  const files: Files = new Map([[A, { text: TWO_AFTER, mtimeMs: 1 }], [snap(A), { text: TWO_BEFORE, mtimeMs: 1 }]])
+  const { writes, clock } = await started($, on, files)
+  await $.command.run(mdCommand(A))
+  const ui = await $.ui.mount(pane('terminal'))
+  await ui.press({ key: 'next-change' })
+  await ui.press({ key: 'reject-change' })
+
+  expect(writes).toEqual([{ path: A, text: 'one\n\ntwo\n\nTHREE\n' }])
+  expect(await headLine(ui)).toMatch(/ · change 1 of 1 ·$/)
+  expect(await docRows(ui)).toContain('one')
+  expect((await rowTexts(ui)).filter(r => r.startsWith('▌'))).toEqual(['▌ threeTHREE'])
+
+  // the poll reads back what was written: nothing changes
+  await clock.advance(1000)
+  expect(await headLine(ui)).toMatch(/ · change 1 of 1 ·$/)
+  await ui.unmount()
+})
+
+test('a reject that cannot be written leaves the doc as it was and says why', async ($, on) => {
+  const files: Files = new Map([[A, { text: TWO_AFTER, mtimeMs: 1 }], [snap(A), { text: TWO_BEFORE, mtimeMs: 1 }]])
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  await started($, on, files, true)
+  await $.command.run(mdCommand(A))
+  const ui = await $.ui.mount(pane('terminal'))
+  await ui.press({ key: 'next-change' })
+  await ui.press({ key: 'reject-change' })
+  expect(toasts).toEqual([expect.stringMatching(/^Cannot reject the change: .*EACCES/)])
+  expect(await headLine(ui)).toMatch(/ · change 1 of 2 ·$/)
+  expect(files.get(A)?.text).toBe(TWO_AFTER)
+  await ui.unmount()
 })

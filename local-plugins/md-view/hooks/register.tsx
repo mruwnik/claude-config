@@ -2,11 +2,16 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { MdViewDoc, MdViewView } from '../types'
+import { completePath, mdArgument, splitPartial } from './complete'
+import { acceptHunk, rejectHunk } from './review'
+import type { Entry } from './complete'
 import { snapshotPath } from './diff'
 import type { Span } from './inline'
-import type { Mark, TableSpan } from './render'
+import { sanitize } from './render'
+import type { Mark, Row, TableSpan, Tint } from './render'
 import { resolvePath } from './snapshot'
 import { clampOffset, GUTTER, headerText, jumpOffset, layoutDoc, position, scrollStep, visibleRows } from './view'
+import { strWidth } from './width'
 
 const PANE = 'md-view'
 const POLL_MS = 1000
@@ -14,6 +19,7 @@ const SHOW_DOC = 'mcp__md-view__ShowDoc'
 
 const doc = atom({ plugin: 'md-view', key: 'doc' } as const, null)
 const view = atom({ plugin: 'md-view', key: 'view' } as const, null)
+const candidates = atom({ plugin: 'md-view', key: 'candidates' } as const, null)
 
 const TOP: MdViewView = { offset: 0, hunk: -1 }
 
@@ -21,8 +27,14 @@ const TOP: MdViewView = { offset: 0, hunk: -1 }
 const MARK_COLORS: Record<Mark, string> = { added: 'success', changed: 'warning', removed: 'error' }
 const MARKER = '▌'
 const STICKY_BACKGROUND = 'userMessageBackground'
+// theme keys: the line backgrounds of Claude Code's own edit diffs
+const TINT_BACKGROUNDS: Record<Tint, string> = { added: 'diffAdded', removed: 'diffRemoved' }
 // what the `n` Button takes beside the header line: `n: next` and the gap before it
 const BUTTON_COLUMNS = 8
+// what `a: accept` and `r: reject` take beside it, each with its gap
+const REVIEW_COLUMNS = 20
+// the most Tab candidates the band lists before saying how many more
+const MAX_CANDIDATES = 40
 
 type Opened = { isOpened: true; path: string } | { isOpened: false; error: string }
 
@@ -65,6 +77,41 @@ const absolutePath = async ($: EngineInterface, path: string): Promise<string> =
   } catch {
     return path
   }
+}
+
+/** `~` and `~/...` against HOME; any other path, or one when HOME is unknown, as given. */
+const expandHome = async ($: EngineInterface, path: string): Promise<string> => {
+  if (path !== '~' && !path.startsWith('~/')) return path
+  const home = await homeOf($)
+  return home === undefined ? path : `${home}${path.slice(1)}`
+}
+
+/** The path a `/md` argument names: a leading `@` (the prompt's own file mention) dropped, `~` expanded. */
+const argumentPath = ($: EngineInterface, arg: string): Promise<string> => expandHome($, arg.replace(/^@/, ''))
+
+/** The entries of the dir at `path`; none when it cannot be listed. */
+const listEntries = async ($: EngineInterface, path: string): Promise<Entry[]> => {
+  try {
+    return await $.fs.list(path)
+  } catch {
+    return []
+  }
+}
+
+/** The draft with its `/md` argument (`partial`, at the draft's end) completed as far as Tab can take it. */
+const completeDraft = async ($: EngineInterface, draft: string, partial: string): Promise<string> => {
+  const mention = partial.startsWith('@') ? '@' : ''
+  const typed = partial.slice(mention.length)
+  const { dir } = splitPartial(typed)
+  const entries = await listEntries($, await absolutePath($, await expandHome($, dir === '' ? '.' : dir)))
+  const done = completePath(typed, entries)
+  await update($, candidates, () => (done.candidates.length > 1 ? done.candidates : null))
+  return draft.slice(0, draft.length - partial.length) + mention + done.text
+}
+
+const candidateText = (names: string[]): string => {
+  const more = names.length - MAX_CANDIDATES
+  return names.slice(0, MAX_CANDIDATES).join('  ') + (more > 0 ? `  … ${more} more` : '')
 }
 
 /** The text saved when the person last stopped viewing the doc at `absPath`; undefined when there is none or it cannot be read. */
@@ -130,7 +177,8 @@ const openDoc = async ($: EngineInterface, path: string): Promise<Opened> => {
   const isSame = current !== null && (await absOf($, current)) === absPath
   // another doc takes the pane: what was shown is what the person has seen of it
   if (current !== null && !isSame) await saveSnapshot($, await absOf($, current), current.text)
-  const baseline = isSame ? current?.baseline : await loadBaseline($, absPath)
+  // never seen before: what the person sees now is what later edits are marked against
+  const baseline = (isSame ? current?.baseline : await loadBaseline($, absPath)) ?? fresh.text
 
   const next: MdViewDoc = {
     path,
@@ -177,6 +225,47 @@ const jumpToNextChange = async ($: EngineInterface, hunkRows: number[], tables: 
   })
 }
 
+/** How the pane was laid out when a button was pressed: what picking the next change needs. */
+type Frame = { width: number; windowRows: number }
+
+/** After an accept or reject: picks the change now at `hunk` (the one after the one that went), or none when none is left. */
+const pickAfter = async ($: EngineInterface, d: MdViewDoc, hunk: number, frame: Frame) => {
+  const layout = layoutDoc(d.text, d.baseline, frame.width)
+  const pick = Math.min(hunk, layout.hunkRows.length - 1)
+  await update($, view, v => {
+    if (pick < 0) return { ...(v ?? TOP), hunk: -1 }
+    return { hunk: pick, offset: jumpOffset(layout.tables, layout.hunkRows[pick] as number, layout.rows.length, frame.windowRows) }
+  })
+}
+
+/** Takes change `hunk` into the baseline: it is no longer marked; the file is not touched. */
+const acceptChange = async ($: EngineInterface, hunk: number, frame: Frame) => {
+  const shown = await read($, doc)
+  if (shown === null || shown.baseline === undefined) return
+  // the hunks as the pane numbers them: of the sanitized texts
+  const baseline = acceptHunk(sanitize(shown.baseline), sanitize(shown.text), hunk)
+  const next = { ...shown, baseline }
+  await update($, doc, d => (d === null || d.path !== shown.path ? d : { ...d, baseline }))
+  await pickAfter($, next, hunk, frame)
+}
+
+/** Writes the file back with change `hunk` undone, as the baseline has that part; a failed write is a toast and changes nothing. */
+const rejectChange = async ($: EngineInterface, hunk: number, frame: Frame) => {
+  const shown = await read($, doc)
+  if (shown === null || shown.baseline === undefined) return
+  const text = rejectHunk(shown.baseline, shown.text, hunk)
+  try {
+    await $.fs.write(shown.path, text)
+  } catch (error) {
+    $.ui.toast(`Cannot reject the change: ${message(error)}`)
+    return
+  }
+  const fresh = await readFile($, shown.path)
+  const next = { ...shown, text, mtimeMs: fresh instanceof Error ? shown.mtimeMs : fresh.mtimeMs, updatedAt: await $.clock.now() }
+  await update($, doc, d => (d === null || d.path !== shown.path ? d : { ...d, text: next.text, mtimeMs: next.mtimeMs, updatedAt: next.updatedAt }))
+  await pickAfter($, next, hunk, frame)
+}
+
 type Elements = ReturnType<EngineInterface['ui']['resolve']>
 
 const drawSpan = ({ Text }: Elements, span: Span, key: string) => {
@@ -188,13 +277,23 @@ const drawSpan = ({ Text }: Elements, span: Span, key: string) => {
   )
 }
 
-const drawRow = (elements: Elements, spans: Span[], mark: Mark | undefined, isSticky: boolean, key: string) => {
+/** A row's background: the sticky header's over a tint's. */
+const rowBackground = (row: Row, isSticky: boolean): string | undefined =>
+  isSticky ? STICKY_BACKGROUND : row.tint === undefined ? undefined : TINT_BACKGROUNDS[row.tint]
+
+/** One doc row, gutter first; a tinted row is padded to `columns` so its background spans the pane, as GitHub's does. */
+const drawRow = (elements: Elements, row: Row, isSticky: boolean, columns: number, key: string) => {
   const { Text } = elements
+  const { spans, mark } = row
   const gutter = mark === undefined ? ' '.repeat(GUTTER) : [<Text key="g" color={MARK_COLORS[mark]}>{MARKER}</Text>, ' '.repeat(GUTTER - 1)]
+  const background = rowBackground(row, isSticky)
+  const used = GUTTER + spans.reduce((n, s) => n + strWidth(s.text), 0)
+  const fill = row.tint === undefined ? '' : ' '.repeat(Math.max(0, columns - used))
   return (
-    <Text key={key} wrap="truncate" {...(isSticky ? { backgroundColor: STICKY_BACKGROUND } : {})}>
+    <Text key={key} wrap="truncate" {...(background === undefined ? {} : { backgroundColor: background })}>
       {gutter}
       {spans.map((s, j) => drawSpan(elements, s, `s${j}`))}
+      {fill}
     </Text>
   )
 }
@@ -223,10 +322,35 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'md' }, async ($, e) => {
-    const path = e.args.trim()
+    const path = await argumentPath($, e.args.trim())
     if (path === '') return { text: 'Usage: /md <path>' }
     const opened = await openDoc($, path)
     return { text: opened.isOpened ? `Showing ${opened.path}.` : `Cannot show ${path}: ${opened.error}` }
+  })
+
+  // Tab after `/md <partial>` completes the path; any other key drops the candidates an ambiguous Tab listed
+  on('prompt.edit', async ($, e, next) => {
+    const isTab = e.key?.key === 'tab' && !e.key.shift && !e.key.ctrl && !e.key.meta
+    const partial = isTab && e.cursor === e.text.length ? mdArgument(e.text) : undefined
+    if (partial === undefined) {
+      if ((await read($, candidates)) !== null) await update($, candidates, () => null)
+      return next(e)
+    }
+    const text = await completeDraft($, e.text, partial)
+    return { text, cursor: text.length }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const names = await read($, candidates)
+    if (names === null || e.props.hasSurvey) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box>
+        <Text dimColor>
+          {candidateText(names)}
+        </Text>
+      </Box>
+    )
   })
 
   on('tool.call', { tool: SHOW_DOC }, async ($, e) => {
@@ -284,12 +408,17 @@ export const register: Register = on => {
     const windowRows = Math.max(1, e.props.scroll.bodyRows - headerRows)
     const rowCount = layout.rows.length
     drawn = { rowCount, windowRows }
-    const offset = clampOffset((await read($, view))?.offset ?? 0, rowCount, windowRows)
+    const shownView = await read($, view)
+    const offset = clampOffset(shownView?.offset ?? 0, rowCount, windowRows)
     const changes = layout.hunkRows.length
+    // the change `n` picked, while it still exists
+    const hunk = shownView?.hunk ?? -1
+    const selected = hunk >= 0 && hunk < changes ? hunk : undefined
+    const frame: Frame = { width: Math.max(1, columns - GUTTER), windowRows }
     const head = headerText(
-      { path: shown.path, updated: clockText(shown.updatedAt), position: position(offset, rowCount, windowRows), changes },
+      { path: shown.path, updated: clockText(shown.updatedAt), position: position(offset, rowCount, windowRows), changes, selected },
       columns,
-      changes > 0 ? BUTTON_COLUMNS : 0,
+      (changes > 0 ? BUTTON_COLUMNS : 0) + (selected === undefined ? 0 : REVIEW_COLUMNS),
     )
     const rows = visibleRows(layout, offset, windowRows)
     const filler = Array.from({ length: windowRows - rows.length }, (_, k) => (
@@ -311,6 +440,16 @@ export const register: Register = on => {
               next
             </Button>
           )}
+          {selected !== undefined && (
+            <Button key="accept-change" plain hotkey="a" onPress={() => void acceptChange($, selected, frame)}>
+              accept
+            </Button>
+          )}
+          {selected !== undefined && (
+            <Button key="reject-change" plain hotkey="r" onPress={() => void rejectChange($, selected, frame)}>
+              reject
+            </Button>
+          )}
         </Box>
         {shown.isMissing && (
           <Text key="missing" dimColor wrap="truncate">
@@ -318,7 +457,7 @@ export const register: Register = on => {
           </Text>
         )}
         <Box key="rows" flexDirection="column">
-          {rows.map((r, k) => drawRow(elements, r.row.spans, r.row.mark, r.isSticky, `row-${k}`))}
+          {rows.map((r, k) => drawRow(elements, r.row, r.isSticky, columns, `row-${k}`))}
           {filler}
         </Box>
         {/* one row past the body: the engine then has a row to scroll, so arrows raise ui.scroll and Home/End (by contentRows) differ from a page (by bodyRows) */}

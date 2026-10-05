@@ -1,7 +1,8 @@
 import type { Block, Change } from './diff'
-import { tableSpans, wrapSpans } from './render'
-import type { Mark, Rendered, Row, TableSpan } from './render'
+import { inlineOf, tableSpans, wrapSpans } from './render'
+import type { Mark, Patches, Rendered, Row, TableSpan, Tint } from './render'
 import { plainCell, splitRow } from './table'
+import { wordDiff } from './words'
 
 /** One change placed in the NEW text: `start`/`end` are its character range (a removed block has none: both are where it used to sit). */
 export type MarkItem = {
@@ -46,6 +47,22 @@ export const markItems = (changes: Change[]): MarkItem[] => {
   return out
 }
 
+/**
+ * The word diffs of the changed blocks that draw as one heading or paragraph
+ * (in a list item or quote too), by the line each starts on in the new text:
+ * `renderMarkdown` draws these in place of the blocks' own spans. Code and
+ * table rows are not diffed inline.
+ */
+export const inlinePatches = (changes: Change[]): Patches =>
+  new Map(
+    changes.flatMap((c): [number, ReturnType<typeof wordDiff>][] => {
+      if (c.op !== 'changed' || c.block.kind === 'code' || c.block.kind === 'table-row') return []
+      const old = inlineOf(c.old.text)
+      const next = inlineOf(c.block.text)
+      return old === undefined || next === undefined ? [] : [[c.block.line, wordDiff(old, next)]]
+    }),
+  )
+
 /** The doc's rows with the marks on, the tables where they now sit, and the row each change hunk starts on (by hunk). */
 export type Marked = { rows: Row[]; tables: TableSpan[]; hunkRows: number[] }
 
@@ -74,15 +91,15 @@ const lineStarts = (text: string): number[] => {
   return starts
 }
 
-/** Old text as struck rows: each source line wrapped, dim and struck through. */
+/** Old text as struck rows on the removed background: each source line wrapped and struck through. */
 const struck = (text: string, mark: Mark, width: number): Row[] =>
   text
     .replace(/\n+$/, '')
     .split('\n')
     .flatMap((line): Row[] =>
       line.trim() === ''
-        ? [{ spans: [], kind: 'old', mark }]
-        : wrapSpans([{ text: line, dimColor: true, strikethrough: true }], width).map(spans => ({ spans, kind: 'old', mark })),
+        ? [{ spans: [], kind: 'old', mark, tint: 'removed' }]
+        : wrapSpans([{ text: line, strikethrough: true }], width).map(spans => ({ spans, kind: 'old', mark, tint: 'removed' })),
     )
 
 const rowPlain = (block: Block): string => splitRow(block.text).map(plainCell).join(' │ ')
@@ -102,19 +119,33 @@ type Insert = { at: number; rows: Row[] }
 /**
  * Puts `changes` (of the sanitized `text` against its baseline) on the rows
  * `rendered` drew of it: every row of an added or changed block carries its
- * mark; a changed block's old text follows it as struck rows (a table row's
- * does not: it would break the box); a removed block is struck rows where it
- * stood, a removed table row under its table. No change marks nothing.
+ * mark. An added block's rows are tinted added. A changed block drawn from
+ * `patches` already shows its word diff; any other's rows are tinted added and
+ * its old text follows as struck rows (a table row's does not: it would break
+ * the box). A removed block is struck rows where it stood, a removed table row
+ * under its table; struck rows are tinted removed. No change marks nothing.
  */
-export const applyMarks = (rendered: Rendered & { headers: ReadonlyMap<number, number> }, changes: Change[], text: string, width: number): Marked => {
+export const applyMarks = (
+  rendered: Rendered & { headers: ReadonlyMap<number, number> },
+  changes: Change[],
+  text: string,
+  width: number,
+  patches: Patches = new Map(),
+): Marked => {
   const items = markItems(changes)
   if (!items.some(i => i.op !== 'same')) return { rows: rendered.rows, tables: rendered.tables, hunkRows: [] }
 
+  const isInline = (it: MarkItem): boolean => it.op === 'changed' && patches.has(it.block.line)
   const lineMarks = new Map<number, Mark>()
+  const lineTints = new Map<number, Tint>()
   for (const it of items) {
     if (it.op !== 'added' && it.op !== 'changed') continue
     const isDelimiter = it.block.part === 'delimiter'
-    for (const n of blockLines(it.block)) if (!isDelimiter || !lineMarks.has(n)) lineMarks.set(n, isDelimiter ? 'changed' : it.op)
+    const isTinted = !isDelimiter && !isInline(it) && (it.op === 'added' || it.block.kind !== 'table-row')
+    for (const n of blockLines(it.block)) {
+      if (!isDelimiter || !lineMarks.has(n)) lineMarks.set(n, isDelimiter ? 'changed' : it.op)
+      if (isTinted) lineTints.set(n, 'added')
+    }
   }
 
   const firstRow = new Map<number, number>()
@@ -122,12 +153,14 @@ export const applyMarks = (rendered: Rendered & { headers: ReadonlyMap<number, n
   const rows = rendered.rows.map((row, idx): Row => {
     if (row.lines === undefined) return row
     let mark: Mark | undefined
+    let tint: Tint | undefined
     for (let n = row.lines[0]; n < row.lines[1]; n++) {
       mark ??= lineMarks.get(n)
+      tint ??= lineTints.get(n)
       if (!firstRow.has(n)) firstRow.set(n, idx)
       lastRow.set(n, idx)
     }
-    return mark === undefined ? row : { ...row, mark }
+    return mark === undefined ? row : { ...row, mark, ...(tint === undefined ? {} : { tint }) }
   })
 
   const starts = lineStarts(text)
@@ -151,7 +184,7 @@ export const applyMarks = (rendered: Rendered & { headers: ReadonlyMap<number, n
       const lines = blockLines(it.block)
       const first = lines.map(n => firstRow.get(n)).find(r => r !== undefined)
       target(it.hunk, first === undefined ? undefined : rows[first])
-      if (it.op === 'added' || it.block.kind === 'table-row' || it.old === undefined) continue
+      if (it.op === 'added' || it.block.kind === 'table-row' || it.old === undefined || isInline(it)) continue
       const last = Math.max(-1, ...lines.map(n => lastRow.get(n) ?? -1))
       if (last !== -1) inserts.push({ at: last + 1, rows: struck(it.old.text, 'changed', width) })
       continue

@@ -17,7 +17,15 @@ export type Row = {
   table?: { id: number }
   /** Set by the diff marks: how the block this row draws changed. */
   mark?: Mark
+  /** Set by the diff marks on rows of a whole block added or removed: the row's background. */
+  tint?: Tint
 }
+
+/** A whole row's diff background: GitHub's green for an added block, red for a removed one. */
+export type Tint = 'added' | 'removed'
+
+/** Inline spans that stand in for a block's own, by the source line the block starts on: a changed block's word diff. */
+export type Patches = ReadonlyMap<number, Span[]>
 
 /** Where a table's rows are: `start` its top border, `end` its last row (inclusive), `headerRows` its pinnable header (0: none). */
 export type TableSpan = { id: number; start: number; headerRows: number; end: number }
@@ -348,7 +356,7 @@ const parseBlocks = (lines: Line[]): Block[] => {
   return blocks
 }
 
-type Ctx = { depth: number; tables: { next: number; headers: Map<number, number> } }
+type Ctx = { depth: number; tables: { next: number; headers: Map<number, number> }; patches: Patches }
 
 const blank = (): Row => ({ spans: [], kind: 'blank' })
 
@@ -372,10 +380,10 @@ const codeRows = (lines: Line[], width: number): Row[] =>
     }))
   })
 
-const headingRows = (block: Extract<Block, { kind: 'heading' }>, width: number): Row[] => {
+const headingRows = (block: Extract<Block, { kind: 'heading' }>, width: number, ctx: Ctx): Row[] => {
   const style = HEADING_STYLES[block.level - 1] ?? {}
   const at: [number, number] = [block.from, block.to]
-  const rows = textRows(parseInline(block.text, style), width, 'heading', at)
+  const rows = textRows(ctx.patches.get(block.from) ?? parseInline(block.text, style), width, 'heading', at)
   if (block.level > 2) return rows
   const ruleWidth = Math.max(1, Math.min(width, ...rows.map(r => strWidth(r.spans.map(s => s.text).join('')))))
   const rule: Span = block.level === 1 ? { text: '═'.repeat(ruleWidth), color: 'claude' } : { text: '─'.repeat(ruleWidth), dimColor: true }
@@ -408,9 +416,9 @@ const listRows = (block: Extract<Block, { kind: 'list' }>, width: number, ctx: C
 const renderBlock = (block: Block, width: number, ctx: Ctx): Row[] => {
   switch (block.kind) {
     case 'heading':
-      return headingRows(block, width)
+      return headingRows(block, width, ctx)
     case 'paragraph':
-      return textRows(parseInline(block.text), width, 'text', [block.from, block.to])
+      return textRows(ctx.patches.get(block.from) ?? parseInline(block.text), width, 'text', [block.from, block.to])
     case 'code':
       return codeRows(block.lines, width)
     case 'rule':
@@ -446,10 +454,36 @@ export const tableSpans = (rows: Row[], headers: ReadonlyMap<number, number>): T
  * headings, paragraphs with inline styles, lists, task lists, quotes, code,
  * rules, tables (table.ts) and HTML as plain text, a blank row between blocks.
  */
-export const renderMarkdown = (text: string, width: number): Rendered & { headers: ReadonlyMap<number, number> } => {
+export const renderMarkdown = (text: string, width: number, patches: Patches = new Map()): Rendered & { headers: ReadonlyMap<number, number> } => {
   const w = Math.max(1, width)
-  const ctx: Ctx = { depth: 0, tables: { next: 0, headers: new Map() } }
+  const ctx: Ctx = { depth: 0, tables: { next: 0, headers: new Map() }, patches }
   const lines = text.split('\n').map((t, n) => ({ text: t, n }))
   const rows = renderBlocks(parseBlocks(lines), w, ctx, true).map(row => ({ ...row, spans: fitSpans(row.spans, w) }))
   return { rows, tables: tableSpans(rows, ctx.tables.headers), headers: ctx.tables.headers }
 }
+
+/** The one heading's or paragraph's inline spans a block-level piece of markdown holds; descends into lists and quotes. */
+const inlineBlock = (blocks: Block[]): Span[] | undefined => {
+  if (blocks.length !== 1) return undefined
+  const block = blocks[0] as Block
+  switch (block.kind) {
+    case 'heading':
+      return parseInline(block.text, HEADING_STYLES[block.level - 1] ?? {})
+    case 'paragraph':
+      return parseInline(block.text)
+    case 'quote':
+      return inlineBlock(block.children)
+    case 'list':
+      return block.items.length === 1 ? inlineBlock((block.items[0] as Item).children) : undefined
+    default:
+      return undefined
+  }
+}
+
+/**
+ * The inline spans of `text` (one diff block's source) as the doc would draw
+ * them, when it draws as a single heading or paragraph (inside a list item or
+ * quote too); undefined for code, tables, or more than one block.
+ */
+export const inlineOf = (text: string): Span[] | undefined =>
+  inlineBlock(parseBlocks(sanitize(text).replace(/\n+$/, '').split('\n').map((t, n) => ({ text: t, n }))))

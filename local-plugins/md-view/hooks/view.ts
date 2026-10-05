@@ -1,5 +1,5 @@
 import { compare } from './diff'
-import { applyMarks } from './marks'
+import { applyMarks, inlinePatches } from './marks'
 import type { Marked } from './marks'
 import { renderMarkdown, sanitize } from './render'
 import type { Row, TableSpan } from './render'
@@ -25,11 +25,15 @@ export const layoutDoc = (text: string, baseline: string | undefined, width: num
   if (last !== undefined && last.text === text && last.baseline === baseline && last.width === width) return last.layout
   stats.layouts += 1
   const clean = sanitize(text)
-  const rendered = renderMarkdown(clean, width)
-  const layout =
-    baseline === undefined || baseline.trim() === ''
-      ? { rows: rendered.rows, tables: rendered.tables, hunkRows: [] }
-      : applyMarks(rendered, compare(sanitize(baseline), clean), clean, width)
+  if (baseline === undefined || baseline.trim() === '') {
+    const rendered = renderMarkdown(clean, width)
+    const layout = { rows: rendered.rows, tables: rendered.tables, hunkRows: [] }
+    last = { text, baseline, width, layout }
+    return layout
+  }
+  const changes = compare(sanitize(baseline), clean)
+  const patches = inlinePatches(changes)
+  const layout = applyMarks(renderMarkdown(clean, width, patches), changes, clean, width, patches)
   last = { text, baseline, width, layout }
   return layout
 }
@@ -103,7 +107,8 @@ export const position = (offset: number, rowCount: number, windowRows: number): 
 /** The last code points of `text` that fit in `width` cells. */
 const tailToWidth = (text: string, width: number): string => [...cutToWidth([...text].reverse().join(''), width)].reverse().join('')
 
-export type HeaderInfo = { path: string; updated: string; position: string; changes: number }
+/** `selected`: the change `n` picked (from 0), named in place of the count. */
+export type HeaderInfo = { path: string; updated: string; position: string; changes: number; selected?: number }
 
 /**
  * The pane's header line in `columns` less `reserve` (the button beside it):
@@ -111,7 +116,8 @@ export type HeaderInfo = { path: string; updated: string; position: string; chan
  * path too long is cut from the front.
  */
 export const headerText = (info: HeaderInfo, columns: number, reserve: number): string => {
-  const changes = info.changes === 0 ? '' : ` · ${info.changes} ${info.changes === 1 ? 'change' : 'changes'} since you last looked ·`
+  const count = ` · ${info.changes} ${info.changes === 1 ? 'change' : 'changes'} since you last looked ·`
+  const changes = info.changes === 0 ? '' : info.selected === undefined ? count : ` · change ${info.selected + 1} of ${info.changes} ·`
   const tail = ` · updated ${info.updated} · ${info.position}${changes}`
   const room = columns - reserve - strWidth(tail)
   const path = strWidth(info.path) <= room ? info.path : `…${tailToWidth(info.path, Math.max(0, room - 1))}`
