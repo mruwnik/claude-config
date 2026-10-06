@@ -146,7 +146,9 @@
     "equistamp-all@equistamp-skills": true,
     "security-guidance@claude-plugins-official": true,
     "cc-plugin-you-should-know@builtin": true,
-    "md-view@local-plugins": true
+    "md-view@local-plugins": true,
+    "live-tests@local-plugins": true,
+    "agent-usage@local-plugins": true
   },
   "extraKnownMarketplaces": {
     "equistamp-skills": {
@@ -170,5 +172,12 @@
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754166832429
+  },
+  "pluginConfigs": {
+    "agent-usage@local-plugins": {
+      "options": {
+        "footer": "always"
+      }
+    }
   }
 }

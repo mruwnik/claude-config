@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { MdViewDoc, MdViewView } from '../types'
+import type { MdViewDoc, MdViewEditing, MdViewEditorMessage, MdViewEditorProps, MdViewView } from '../types'
 import { completePath, mdArgument, splitPartial } from './complete'
 import { acceptHunk, rejectHunk } from './review'
 import type { Entry } from './complete'
@@ -11,7 +11,7 @@ import { sanitize } from './render'
 import type { Mark, Row, TableSpan, Tint } from './render'
 import { resolvePath } from './snapshot'
 import { clampOffset, GUTTER, headerText, jumpOffset, layoutDoc, position, scrollStep, visibleRows } from './view'
-import { strWidth } from './width'
+import { cutToWidth, strWidth } from './width'
 
 const PANE = 'md-view'
 const POLL_MS = 1000
@@ -20,6 +20,7 @@ const SHOW_DOC = 'mcp__md-view__ShowDoc'
 const doc = atom({ plugin: 'md-view', key: 'doc' } as const, null)
 const view = atom({ plugin: 'md-view', key: 'view' } as const, null)
 const candidates = atom({ plugin: 'md-view', key: 'candidates' } as const, null)
+const editing = atom({ plugin: 'md-view', key: 'editing' } as const, null)
 
 const TOP: MdViewView = { offset: 0, hunk: -1 }
 
@@ -35,6 +36,11 @@ const BUTTON_COLUMNS = 8
 const REVIEW_COLUMNS = 20
 // the most Tab candidates the band lists before saying how many more
 const MAX_CANDIDATES = 40
+// the editor's `Client` key, and what `e: edit` / `e: view` take beside the header line
+const EDITOR = 'editor'
+const EDIT_COLUMNS = 8
+// a Client's props and posts are bounded at 100,000 characters: room left for the rest of them
+const MAX_EDIT_CHARS = 90_000
 
 type Opened = { isOpened: true; path: string } | { isOpened: false; error: string }
 
@@ -159,6 +165,8 @@ const poll = async ($: EngineInterface) => {
   if (fresh instanceof Error) return
   const now = await $.clock.now()
   await update($, doc, d => (d === null || d.path !== shown.path ? d : { ...d, ...fresh, updatedAt: now, isMissing: false }))
+  // a clean editor follows the file; a dirty one keeps its edits and the header says the file moved under it
+  await update($, editing, ed => (ed === null || ed.isDirty ? ed : { ...ed, saved: fresh.text }))
 }
 
 const startPolling = ($: EngineInterface) => {
@@ -190,8 +198,9 @@ const openDoc = async ($: EngineInterface, path: string): Promise<Opened> => {
     isMissing: false,
   }
   await update($, doc, () => next)
-  // the same doc again keeps its place; another starts at its top
+  // the same doc again keeps its place; another starts at its top, out of the editor
   if (!isSame) await update($, view, () => TOP)
+  if (!isSame) await leaveEditor($, current)
   await $.ui.open({ id: PANE, title: next.title })
   startPolling($)
   return { isOpened: true, path }
@@ -264,6 +273,72 @@ const rejectChange = async ($: EngineInterface, hunk: number, frame: Frame) => {
   const next = { ...shown, text, mtimeMs: fresh instanceof Error ? shown.mtimeMs : fresh.mtimeMs, updatedAt: await $.clock.now() }
   await update($, doc, d => (d === null || d.path !== shown.path ? d : { ...d, text: next.text, mtimeMs: next.mtimeMs, updatedAt: next.updatedAt }))
   await pickAfter($, next, hunk, frame)
+}
+
+/** Ends editing; unsaved edits are dropped, with a toast naming the doc they were to. */
+const leaveEditor = async ($: EngineInterface, shown: MdViewDoc | null) => {
+  const was = await read($, editing)
+  if (was === null) return
+  await update($, editing, () => null)
+  if (was.isDirty && shown !== null) $.ui.toast(`Unsaved edits to ${shown.title} were dropped.`)
+}
+
+/** `e`: the rendered doc to the source editor, or back; leaving with unsaved edits takes a second press. */
+const toggleEdit = async ($: EngineInterface) => {
+  const shown = await read($, doc)
+  if (shown === null) return
+  const now = await read($, editing)
+  if (now === null) {
+    if (shown.text.length > MAX_EDIT_CHARS) return $.ui.toast(`${shown.title} is too big to edit here (over ${MAX_EDIT_CHARS} characters).`)
+    await update($, editing, () => ({ saved: shown.text, isDirty: false, armed: null }))
+    // the keys go to the editor at once when the pane holds them; otherwise a click on it takes them
+    void $.ui.focus({ requestId: PANE, key: EDITOR }).catch(() => undefined)
+    return
+  }
+  if (now.isDirty && now.armed !== 'discard') {
+    await update($, editing, (ed): MdViewEditing | null => (ed === null ? ed : { ...ed, armed: 'discard' }))
+    return $.ui.toast('Unsaved edits: :w in the editor saves them, e again drops them.')
+  }
+  await update($, editing, () => null)
+}
+
+/**
+ * Writes the editor's `text` to the file; over a file changed on disk since
+ * editing began only on a second save. Says whether it was written.
+ */
+const saveEdit = async ($: EngineInterface, text: string): Promise<boolean> => {
+  const shown = await read($, doc)
+  const now = await read($, editing)
+  if (shown === null || now === null) return false
+  if (shown.text !== now.saved && now.armed !== 'overwrite') {
+    await update($, editing, (ed): MdViewEditing | null => (ed === null ? ed : { ...ed, armed: 'overwrite' }))
+    $.ui.toast(`${shown.title} changed on disk since you began editing: save again to overwrite it.`)
+    return false
+  }
+  try {
+    await $.fs.write(shown.path, text)
+  } catch (error) {
+    $.ui.toast(`Cannot save ${shown.title}: ${message(error)}`)
+    return false
+  }
+  const fresh = await readFile($, shown.path)
+  const mtimeMs = fresh instanceof Error ? shown.mtimeMs : fresh.mtimeMs
+  const updatedAt = await $.clock.now()
+  await update($, doc, d => (d === null || d.path !== shown.path ? d : { ...d, text, mtimeMs, updatedAt, isMissing: false }))
+  await update($, editing, ed => (ed === null ? ed : { saved: text, isDirty: false, armed: null }))
+  return true
+}
+
+const onEditorMessage = async ($: EngineInterface, data: MdViewEditorMessage) => {
+  // `:q` on a clean buffer or `:q!`: the editor has already refused a `:q` with edits unsaved
+  if (data.kind === 'quit') return update($, editing, () => null)
+  if (data.kind === 'save') {
+    const isSaved = await saveEdit($, data.text)
+    if (isSaved && data.isQuit === true) await update($, editing, () => null)
+    return
+  }
+  // any edit after a warning takes the warning back
+  await update($, editing, ed => (ed === null ? ed : { ...ed, isDirty: data.isDirty, armed: null }))
 }
 
 type Elements = ReturnType<EngineInterface['ui']['resolve']>
@@ -378,11 +453,20 @@ export const register: Register = on => {
     drawn = undefined
     await update($, doc, () => null)
     await update($, view, () => null)
+    await update($, editing, () => null)
     return next(e)
+  })
+
+  on('ui.message', { requestId: PANE }, async ($, e, next) => {
+    if (e.element !== EDITOR) return next(e)
+    await onEditorMessage($, e.data as MdViewEditorMessage)
+    return {}
   })
 
   // md-view draws only the rows in its own window and scrolls them itself: no `next`, so the engine's window stays at the top
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    // the editor keeps its own window over the source: the engine's stays put
+    if ((await read($, editing)) !== null) return {}
     if (drawn === null) return next(e)
     if (drawn === undefined && (await read($, doc)) === null) return next(e)
     await scrollBy($, e)
@@ -403,6 +487,29 @@ export const register: Register = on => {
     }
 
     const columns = e.props.bodyColumns
+    const canEdit = 'Client' in elements
+    const editingNow = canEdit ? await read($, editing) : null
+    if (editingNow !== null && 'Client' in elements) {
+      const { Client } = elements
+      const windowRows = Math.max(1, e.props.scroll.bodyRows - 1)
+      const isMoved = shown.text !== editingNow.saved
+      const props: MdViewEditorProps = { saved: editingNow.saved, rows: windowRows, columns }
+      const head = cutToWidth(`${shown.path} · editing${isMoved ? ' · changed on disk' : ''}`, Math.max(1, columns - EDIT_COLUMNS))
+      return (
+        <Box flexDirection="column">
+          <Box key="head" flexDirection="row" gap={1}>
+            <Text key="head-text" dimColor wrap="truncate">
+              {head}
+            </Text>
+            <Button key="toggle-edit" plain hotkey="e" onPress={() => void toggleEdit($)}>
+              view
+            </Button>
+          </Box>
+          <Client key={EDITOR} module="./editor-client.tsx" props={props} height={windowRows} width={columns} />
+        </Box>
+      )
+    }
+
     const layout = layoutDoc(shown.text, shown.baseline, Math.max(1, columns - GUTTER))
     const headerRows = shown.isMissing ? 2 : 1
     const windowRows = Math.max(1, e.props.scroll.bodyRows - headerRows)
@@ -418,7 +525,7 @@ export const register: Register = on => {
     const head = headerText(
       { path: shown.path, updated: clockText(shown.updatedAt), position: position(offset, rowCount, windowRows), changes, selected },
       columns,
-      (changes > 0 ? BUTTON_COLUMNS : 0) + (selected === undefined ? 0 : REVIEW_COLUMNS),
+      (canEdit ? EDIT_COLUMNS : 0) + (changes > 0 ? BUTTON_COLUMNS : 0) + (selected === undefined ? 0 : REVIEW_COLUMNS),
     )
     const rows = visibleRows(layout, offset, windowRows)
     const filler = Array.from({ length: windowRows - rows.length }, (_, k) => (
@@ -448,6 +555,11 @@ export const register: Register = on => {
           {selected !== undefined && (
             <Button key="reject-change" plain hotkey="r" onPress={() => void rejectChange($, selected, frame)}>
               reject
+            </Button>
+          )}
+          {canEdit && (
+            <Button key="toggle-edit" plain hotkey="e" onPress={() => void toggleEdit($)}>
+              edit
             </Button>
           )}
         </Box>

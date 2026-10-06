@@ -1,0 +1,76 @@
+{
+  "name": "agent-usage",
+  "version": "0.5.1",
+  "author": {
+    "name": "Dan"
+  },
+  "description": "Roughly how much memory and CPU each agent's processes use, and its tokens per model: a footer column, warnings over thresholds, /agent-usage, the agent_usage tool (compact JSON, detail on request), agent_reap (kills a stopped agent's leftovers through Bash), an optional snapshot file and a low-memory notice",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "memoryThresholdGB": {
+      "type": "number",
+      "title": "Memory threshold (GB)",
+      "description": "Warn when one agent's processes together use more than this much memory (PSS).",
+      "default": 2
+    },
+    "cpuThresholdPercent": {
+      "type": "number",
+      "title": "CPU threshold (% of one core)",
+      "description": "Warn when one agent's processes together use more than this much CPU; 100 is one core.",
+      "default": 150
+    },
+    "footer": {
+      "type": "string",
+      "title": "Footer",
+      "description": "always: a column in the footer, right of live-tests, of the rows over the footer floors, ⚠ on rows over a threshold; alerts: only a status line while one is over; off: neither.",
+      "default": "always",
+      "options": [
+        "always",
+        "alerts",
+        "off"
+      ]
+    },
+    "footerMinMemoryMB": {
+      "type": "number",
+      "title": "Footer floor: memory (MB)",
+      "description": "The footer column shows a row (an agent, claude, untracked) only over this much memory or over the CPU floor.",
+      "default": 500
+    },
+    "footerMinCpuPercent": {
+      "type": "number",
+      "title": "Footer floor: CPU (% of one core)",
+      "description": "The footer column shows a row only over this much CPU or over the memory floor.",
+      "default": 30
+    },
+    "intervalSeconds": {
+      "type": "number",
+      "title": "Sample interval (seconds)",
+      "description": "How often the processes are measured.",
+      "default": 5
+    },
+    "memoryFloorMB": {
+      "type": "number",
+      "title": "Memory floor (MB)",
+      "description": "When MemAvailable drops under this plus the margin, the main conversation gets one notice naming the biggest agents; it re-arms once memory is back. 0 is off.",
+      "default": 0
+    },
+    "pressureMarginMB": {
+      "type": "number",
+      "title": "Pressure margin (MB)",
+      "description": "How far above the floor the notice fires.",
+      "default": 1024
+    },
+    "snapshotPath": {
+      "type": "string",
+      "title": "Snapshot file",
+      "description": "Absolute path rewritten with the agent_usage JSON every sample, for scripts to read. Empty is off.",
+      "default": ""
+    },
+    "reapOnStop": {
+      "type": "boolean",
+      "title": "Reap on stop",
+      "description": "Off by default. When on, 30 s after an agent goes from live to stopped or gone, its leftover processes (what agent_usage lists as unattributed for it) are killed through the Bash tool, as agent_reap does, so the permission check and sandbox still apply, and the main conversation gets one notice listing what was killed.",
+      "default": false
+    }
+  }
+}

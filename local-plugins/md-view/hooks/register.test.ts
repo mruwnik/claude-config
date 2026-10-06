@@ -126,7 +126,7 @@ test('a short doc fills the window with blank rows and says it shows all', async
   const ui = await $.ui.mount(pane('terminal'))
   expect(await docRows(ui)).toEqual(['short', ...Array.from({ length: WINDOW - 1 }, () => '')])
   expect(await header(ui)).toMatch(/ · all$/)
-  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', key: 'next-change' })).toBeUndefined()
   await ui.unmount()
 })
 

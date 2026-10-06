@@ -102,7 +102,7 @@ test('a first open has no snapshot: nothing is marked yet and no error shows', a
     const ui = await $.ui.mount(pane(surface))
     expect(await header(ui)).toBeUndefined()
     expect(await gutters(ui)).toEqual([])
-    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', key: 'next-change' })).toBeUndefined()
     expect((await rowTexts(ui)).every(r => r === '' || r.startsWith('  '))).toBe(true)
     await ui.unmount()
   }
@@ -347,7 +347,7 @@ test('accept stops marking the picked change, leaves the file alone, and picks t
   await ui.press({ key: 'accept-change' })
   expect(await header(ui)).toBeUndefined()
   expect(await gutters(ui)).toEqual([])
-  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', key: 'next-change' })).toBeUndefined()
   expect(writes).toEqual([])
   await ui.unmount()
 })

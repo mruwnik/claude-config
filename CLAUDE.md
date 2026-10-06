@@ -65,6 +65,8 @@ When you're **processing** (filtering/summarizing) rather than displaying the re
 ## Engineering Workflow
 
 - **TDD** — write a failing test first, watch it fail, then implement to green. Default for features and bugfixes, unless Dan says otherwise.
+- Check memory/CPU per agent with `mcp__agent-usage__agent_usage` (load it with ToolSearch), not `ps`: it attributes processes to agents by process tree and lists leftovers of stopped agents under `unattributed`. Use it before spawning heavy work, or when memory runs low
+- To clean up a stopped agent's leftover processes, use `mcp__agent-usage__agent_reap` (agent name or id; `dryRun: true` to preview) instead of killing pids by hand: it only kills what agent_usage lists as unattributed for that agent, rechecks pid:starttime, and sends `kill` through the Bash tool
 
 ---
 
@@ -86,6 +88,7 @@ When you're **processing** (filtering/summarizing) rather than displaying the re
 - Use `@pytest.mark.parametrize` liberally
 - Tests should not have conditionals (no `if` statements in tests)
 - Please fix any failing tests, even if they're not your fault
+- Run tests with `mcp__live-tests__run_tests` (load it with ToolSearch), not raw Bash: Dan sees live progress and you get a compact summary. If it says nothing is configured or reports a config error, follow its reply (the `live-tests:setup-tests` skill has templates), then run it again
 
 ### Naming Conventions
 

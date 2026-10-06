@@ -1,0 +1,6 @@
+{
+  "name": "live-tests",
+  "version": "0.3.6",
+  "description": "run_tests tool: runs a project's test suites, shows live progress above the prompt, returns a compact summary",
+  "types": "./types/index.d.ts"
+}

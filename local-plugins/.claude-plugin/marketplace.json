@@ -1,7 +1,23 @@
 {
   "name": "local-plugins",
-  "owner": { "name": "local" },
+  "owner": {
+    "name": "local"
+  },
   "plugins": [
-    { "name": "md-view", "source": "./md-view", "description": "Render a markdown doc in a live-updating pane" }
+    {
+      "name": "md-view",
+      "source": "./md-view",
+      "description": "Render a markdown doc in a live-updating pane"
+    },
+    {
+      "name": "live-tests",
+      "source": "./live-tests",
+      "description": "run_tests tool with live progress in the footer and compact summaries"
+    },
+    {
+      "name": "agent-usage",
+      "source": "./agent-usage",
+      "description": "Per-agent memory and CPU: warns when an agent uses a lot, /agent-usage for the table"
+    }
   ]
 }
