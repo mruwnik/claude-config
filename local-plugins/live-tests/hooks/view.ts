@@ -1,3 +1,4 @@
+import type { PluginOptions } from 'claude-code'
 import type { RunRecord } from '../types'
 import { formatDuration } from './duration'
 import { sameArgs } from './clash'
@@ -179,6 +180,28 @@ export const displayOrder = (list: readonly RunRecord[]) =>
       compare(a.suite, b.suite) ||
       compare(agentKey(a), agentKey(b)),
   )
+
+const FINISHED_RUNS_DEFAULT = 3
+
+/** How many finished runs the footer shows: the footerFinishedRuns option, a whole number of at least 0, else 3. */
+export const finishedLimitFrom = (options: PluginOptions) => {
+  const value = options.footerFinishedRuns
+  return typeof value === 'number' && value >= 0 ? Math.floor(value) : FINISHED_RUNS_DEFAULT
+}
+
+/** When a finished run ended: its last refresh, or its start for a run that has none. */
+const endedAt = (run: RunRecord) => run.now ?? run.startedAt
+
+/** The runs the footer shows: every running one and the `limit` that ended last, in stored order. */
+export const footerRuns = (list: readonly RunRecord[], limit: number) => {
+  const latest = new Set(
+    list
+      .filter(run => run.outcome !== 'running')
+      .sort((a, b) => endedAt(b) - endedAt(a))
+      .slice(0, limit),
+  )
+  return list.filter(run => run.outcome === 'running' || latest.has(run))
+}
 
 const isRerunOf = (run: RunRecord) => (old: RunRecord) =>
   old.outcome !== 'running' &&

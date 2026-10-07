@@ -8,6 +8,8 @@ import { configSource, detectConfig, mergeConfigs, noConfigReply, normalizeConfi
 import type { SuiteConfig, TestsConfig } from './config'
 import { formatDuration } from './duration'
 import { clashReply, findClash, prunable, runStem } from './clash'
+import { backoffMs, isContended, isShownChange, PERSIST_ATTEMPTS, skipContended, withPolls } from './contention'
+import type { Poll } from './contention'
 import { NOTICE_MODES, noticeBatch, noticeMode, noticeText, parseNoticeMode } from './notices'
 import type { NoticeLog, NoticeMode } from './notices'
 import { runProgress } from './progress'
@@ -16,12 +18,13 @@ import { summarize, totalCounts } from './summary'
 import type { StepResult } from './summary'
 import { agentNameOf, deliveryFor, withAgentNames } from './delivery'
 import type { AgentEntry } from './delivery'
-import { displayOrder, footerLines, MARKS, parseView, progressText, runLabel, splitTrailing, startReply, statusCell, VIEWS, withNewRun } from './view'
+import { displayOrder, finishedLimitFrom, footerLines, footerRuns, MARKS, parseView, progressText, runLabel, splitTrailing, startReply, statusCell, VIEWS, withNewRun } from './view'
 import type { View } from './view'
 
 const TOOL = 'run_tests'
 const TOOL_ID = 'mcp__live-tests__run_tests'
 const POLL_MS = 500
+const POLL_STALE_MS = 60_000
 const TAIL_LINES = 40
 const MAX_BASH_TIMEOUT_MS = 600_000
 const TASK_ID = /<task-id>([^<]+)<\/task-id>/
@@ -118,8 +121,24 @@ const INPUT_SCHEMA = {
   },
 }
 
+/**
+ * Makes a write that must land. Every run polls into the one run list, so under load `update` can
+ * lose all its tries to other writers and give up; this waits a jittered, growing while and makes
+ * the write again, so contention slows it but does not fail it.
+ */
+const persist = async <T,>($: $, write: () => Promise<T>, attempt = 0): Promise<T> => {
+  const outcome = await write().then(
+    value => ({ value }),
+    (error: unknown) => ({ error }),
+  )
+  if (!('error' in outcome)) return outcome.value
+  if (!isContended(outcome.error) || attempt + 1 >= PERSIST_ATTEMPTS) throw outcome.error
+  await $.clock.sleep(backoffMs(attempt, Math.random()))
+  return persist($, write, attempt + 1)
+}
+
 const setRun = ($: $, id: string, fn: (run: RunRecord) => RunRecord) =>
-  update($, runs, list => list.map(run => (run.id === id ? fn(run) : run)))
+  persist($, () => update($, runs, list => list.map(run => (run.id === id ? fn(run) : run))))
 
 const readProgress = async ($: $, run: RunRecord) => {
   const texts = await Promise.all(run.events.map(path => $.fs.read(path).catch(() => '')))
@@ -189,10 +208,10 @@ const listAgents = ($: $): Promise<readonly AgentEntry[]> => $.agent.list().catc
 const deliver = async ($: $, run: RunRecord, taskId: string, summary: string) => {
   const delivery = deliveryFor(run.agentId, run.agentId === null ? [] : await listAgents($))
   let isClaimed = false
-  await update($, summaries, all => {
+  await persist($, () => update($, summaries, all => {
     isClaimed = !(taskId in all)
     return isClaimed ? { ...all, [taskId]: delivery.to === 'main' ? summary : null } : all
-  })
+  }))
   if (!isClaimed || delivery.to !== 'agent') return
   const message = { type: 'user' as const, content: [{ type: 'text' as const, text: withSummary(summary) }] }
   await $.session.append({ agentId: delivery.agentId, message }).catch(() => undefined)
@@ -237,38 +256,66 @@ const isAlive = async ($: $, pid: number) => ((await $.fs.exists('/proc/self')) 
  */
 const isKilled = async ($: $, run: RunRecord) => run.pid !== undefined && (await isAlive($, run.pid)) === false
 
-/** Looks for the suite's shell at most every few seconds; settles the run when it died without an exit event. */
-const checkPid = async ($: $, run: RunRecord, progress: RunProgress, now: number) => {
-  if (progress.pid === undefined || now - (run.pidCheckedAt ?? -Infinity) < PID_CHECK_MS) return
+/**
+ * Looks for the suite's shell at most every few seconds: what to note on the run, or undefined
+ * once it settled the run because the shell died without an exit event.
+ */
+const checkPid = async ($: $, run: RunRecord, progress: RunProgress, now: number): Promise<Partial<RunRecord> | undefined> => {
+  if (progress.pid === undefined || now - (run.pidCheckedAt ?? -Infinity) < PID_CHECK_MS) return {}
   const alive = await isAlive($, progress.pid)
   if (alive === false && run.pid === progress.pid) {
     // The exit event may have landed between the read and the check.
     const again = await readProgress($, run)
     await finish($, run, again, again.isDone ? 'unfinished' : KILLED)
-    return
+    return undefined
   }
-  await setRun($, run.id, r => ({ ...r, pidCheckedAt: now, ...(alive === true ? { pid: progress.pid } : {}) }))
+  return { pidCheckedAt: now, ...(alive === true ? { pid: progress.pid } : {}) }
 }
 
-/** One poll of one run: refresh the band, send early failures of a background run, and settle the run once its last step has exited or died. */
-const pollRun = async ($: $, run: RunRecord) => {
+/**
+ * One poll of one run: send early failures of a background run, and settle the run once its last
+ * step has exited or died; else what the band should now show of it, for the poll's one write.
+ */
+const pollRun = async ($: $, run: RunRecord): Promise<Poll | undefined> => {
   const progress = await readProgress($, run)
-  if (progress.isDone) return finish($, run, progress)
+  if (progress.isDone) {
+    await finish($, run, progress)
+    return undefined
+  }
   const now = await $.clock.now()
-  await setRun($, run.id, r => withProgress(r, progress, now))
   if (run.taskId !== null) await notify($, run, progress, now)
-  await checkPid($, run, progress, now)
-  return undefined
+  const noted = await checkPid($, run, progress, now)
+  if (noted === undefined) return undefined
+  return r => ({ ...withProgress(r, progress, now), ...noted })
 }
+
+/**
+ * Polls every running run and writes what changed in one go, so the run list takes one write a
+ * tick however many runs there are, and none when nothing visible changed.
+ */
+const pollOnce = async ($: $) => {
+  const list = await read($, runs)
+  const isUnnamed = list.some(r => r.agentId !== null && r.agentName === null)
+  const agents = isUnnamed ? await listAgents($) : []
+  const active = list.filter(r => r.outcome === 'running')
+  const polled = await Promise.all(active.map(async run => [run.id, await pollRun($, run)] as const))
+  const polls = new Map(polled.flatMap(([id, poll]) => (poll === undefined ? [] : [[id, poll] as const])))
+  const apply = (current: readonly RunRecord[]) => withPolls(isUnnamed ? withAgentNames(current, agents) : current, polls)
+  if (!isShownChange(list, apply(list))) return
+  await skipContended(update($, runs, apply))
+}
+
+// When the poll under way started: a tick that finds one skips, so slow polls never pile up as
+// writers; one stuck past POLL_STALE_MS no longer holds the poller.
+const _polling: { startedAt: number | null } = { startedAt: null }
 
 const pollAll = async ($: $) => {
-  const unnamed = (await read($, runs)).some(r => r.agentId !== null && r.agentName === null)
-  if (unnamed) {
-    const agents = await listAgents($)
-    await update($, runs, list => withAgentNames(list, agents))
-  }
-  const active = (await read($, runs)).filter(r => r.outcome === 'running')
-  await Promise.all(active.map(run => pollRun($, run)))
+  const now = await $.clock.now()
+  if (_polling.startedAt !== null && now - _polling.startedAt < POLL_STALE_MS) return
+  _polling.startedAt = now
+  await pollOnce($).finally(() => {
+    _polling.startedAt = _polling.startedAt === now ? null : _polling.startedAt
+  })
 }
 
 type RunFields =
@@ -301,7 +348,7 @@ const newRun = (fields: Pick<RunRecord, RunFields>): RunRecord => ({
   notices: NO_NOTICES,
 })
 
-const dropRun = ($: $, id: string) => update($, runs, list => list.filter(r => r.id !== id))
+const dropRun = ($: $, id: string) => persist($, () => update($, runs, list => list.filter(r => r.id !== id)))
 
 /** Running runs of the suite in the folder whose shell is gone: they no longer hold it. */
 const deadRuns = async ($: $, root: string, suite: string) => {
@@ -387,10 +434,10 @@ const startRun = async ($: $, input: Input): Promise<string> => {
   const dead = await deadRuns($, root, suiteName)
   // The check and the insert in one update, so two calls at once cannot both pass it.
   const found: { clash?: RunRecord } = {}
-  await update($, runs, list => {
+  await persist($, () => update($, runs, list => {
     found.clash = findClash(list, { root, suite: suiteName, args: input.args }, suite.concurrency ?? 'args', dead)
     return found.clash === undefined ? withNewRun(list, run) : list
-  })
+  }))
   if (found.clash !== undefined) return clashReply({ holder: found.clash, callerAgentId: input.agentId ?? null, now: startedAt })
 
   await $.fs.write(join(dir, '.gitignore'), '*\n')
@@ -450,13 +497,14 @@ const PERSON_ORIGINS: readonly string[] = ['composer', 'bridge', 'sdk']
 // Theme names where the theme has one, so light and dark themes both read; running has no theme colour of its own.
 const COLORS = { running: 'cyan', passed: 'success', failed: 'error' } as const
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const finishedLimit = finishedLimitFrom(options)
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     // One poller for every run, foreground or background; a reload starts it again over the kept runs.
     $.clock.every(POLL_MS, () => void pollAll($))
     const stored = parseView(String((await $.store.get(VIEW_STORE_KEY)) ?? ''))
-    if (stored !== undefined) await update($, view, () => stored)
+    if (stored !== undefined) await persist($, () => update($, view, () => stored))
     await $.command.register({
       name: VIEW_COMMAND,
       description: 'Choose where live test results show: footer, band, band-right or pane',
@@ -513,7 +561,7 @@ export const register: Register = on => {
   // subagent's run is answered without next, so it never enters main; its run is settled first,
   // which sends the subagent its summary.
   on('prompt.submit', async ($, e, next) => {
-    if (PERSON_ORIGINS.includes(e.origin.kind)) await update($, runs, list => list.filter(r => r.outcome === 'running'))
+    if (PERSON_ORIGINS.includes(e.origin.kind)) await persist($, () => update($, runs, list => list.filter(r => r.outcome === 'running')))
     const taskId = e.origin.kind === 'task-notification' ? taskIdIn(e.text) : undefined
     if (taskId === undefined || !(await isSubagentTask($, taskId))) return next(e)
     await summaryForTask($, taskId)
@@ -523,7 +571,7 @@ export const register: Register = on => {
   on('command.run', { command: VIEW_COMMAND }, async ($, e) => {
     const chosen = parseView(e.args)
     if (chosen === undefined) return { text: `Usage: /${VIEW_COMMAND} ${VIEWS.join('|')} (now: ${await read($, view)})` }
-    await update($, view, () => chosen)
+    await persist($, () => update($, view, () => chosen))
     await $.store.set(VIEW_STORE_KEY, chosen)
     if (chosen === 'pane') await $.ui.open({ id: PANE, title: 'Tests' })
     if (chosen !== 'pane') await $.ui.close({ id: PANE }).catch(() => undefined)
@@ -533,7 +581,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     // What the hooks beneath drew (the engine's modes, another plugin's column) is kept, the runs after it.
     const beneath = await next(e)
-    const list = await read($, runs)
+    const list = footerRuns(await read($, runs), finishedLimit)
     if ((await read($, view)) !== 'footer' || list.length === 0) return beneath
     const { Box, Text } = $.ui.resolve(e)
     // A column keyed `trailing:<plugin>` beneath (agent-usage's) asks to stay last: it goes after the runs.

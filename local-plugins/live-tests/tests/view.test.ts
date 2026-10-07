@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { RunRecord } from '../types'
 import { formatDuration } from '../hooks/duration'
-import { cellWidth, footerLines, footerText, parseView, displayOrder, runLabel, splitTrailing, startReply, withNewRun } from '../hooks/view'
+import { cellWidth, finishedLimitFrom, footerLines, footerRuns, footerText, parseView, displayOrder, runLabel, splitTrailing, startReply, withNewRun } from '../hooks/view'
 
 const VIEWS = [
   ['footer', 'footer'],
@@ -145,6 +145,61 @@ test('displayOrder leaves the stored list as it was', () => {
   displayOrder(runs)
   expect(runs.map(r => r.id)).toEqual(['b', 'a'])
 })
+
+const MIXED = [
+  run({ id: 'p-old', outcome: 'passed', now: 1_000 }),
+  run({ id: 'r-a', suite: 'a', now: 500 }),
+  run({ id: 'f-new', outcome: 'failed', now: 9_000 }),
+  run({ id: 'p-mid', suite: 'alpha', outcome: 'passed', now: 5_000 }),
+  run({ id: 'r-b', suite: 'b', now: 100 }),
+  run({ id: 'f-older', outcome: 'failed', now: 3_000 }),
+]
+
+const FOOTER_RUNS = [
+  [0, ['r-a', 'r-b']],
+  [1, ['r-a', 'f-new', 'r-b']],
+  [3, ['r-a', 'f-new', 'p-mid', 'r-b', 'f-older']],
+  [10, ['p-old', 'r-a', 'f-new', 'p-mid', 'r-b', 'f-older']],
+] as const
+
+for (const [limit, ids] of FOOTER_RUNS) {
+  test(`footerRuns keeps every running run and the ${limit} latest finished, in stored order`, () => {
+    expect(footerRuns(MIXED, limit).map(r => r.id)).toEqual(ids)
+  })
+}
+
+test('footerRuns falls back to the start time of a finished run with no end time', () => {
+  const runs = [
+    run({ id: 'ended', outcome: 'passed', startedAt: 0, now: 4_000 }),
+    { ...run({ id: 'no-end', outcome: 'passed', startedAt: 6_000 }), now: undefined } as unknown as RunRecord,
+    run({ id: 'early', outcome: 'failed', startedAt: 0, now: 2_000 }),
+  ]
+  expect(footerRuns(runs, 2).map(r => r.id)).toEqual(['ended', 'no-end'])
+})
+
+test('footerRuns leaves the stored list as it was', () => {
+  footerRuns(MIXED, 1)
+  expect(MIXED.map(r => r.id)).toEqual(['p-old', 'r-a', 'f-new', 'p-mid', 'r-b', 'f-older'])
+})
+
+test('displayOrder still orders what footerRuns keeps', () => {
+  expect(displayOrder(footerRuns(MIXED, 3)).map(r => r.id)).toEqual(['r-a', 'r-b', 'p-mid', 'f-new', 'f-older'])
+})
+
+const LIMITS = [
+  [{}, 3],
+  [{ footerFinishedRuns: 5 }, 5],
+  [{ footerFinishedRuns: 0 }, 0],
+  [{ footerFinishedRuns: 2.7 }, 2],
+  [{ footerFinishedRuns: -1 }, 3],
+  [{ footerFinishedRuns: '4' }, 3],
+] as const
+
+for (const [options, limit] of LIMITS) {
+  test(`finishedLimitFrom ${JSON.stringify(options)}`, () => {
+    expect(finishedLimitFrom(options)).toBe(limit)
+  })
+}
 
 const LABELS = [
   [run({}), 'unit'],

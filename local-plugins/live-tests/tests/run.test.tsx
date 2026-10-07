@@ -615,3 +615,110 @@ test('a notification of a task the mod did not start still enters', async ($, on
   await notify($, 'other')
   expect(texts).toEqual([notification('other')])
 })
+
+const FOUR_SUITES = JSON.stringify({ suites: Object.fromEntries(['a', 'b', 'c', 'd'].map(name => [name, { argv: ['python', '-m', 'pytest'], runner: 'pytest' }])) })
+
+/** Runs suites a to d one after another, a second apart, so d ends last. */
+const runFourSuites = async ($: Engine, clock: { advance: (ms: number) => Promise<unknown> }) => {
+  for (const suite of ['a', 'b', 'c', 'd']) {
+    await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite })
+    await clock.advance(1_000)
+  }
+}
+
+test('the footer shows only the 3 latest finished runs by default', async ($, on) => {
+  const { clock } = world(on, [], undefined, { config: FOUR_SUITES })
+  await startSession($)
+  await runFourSuites($, clock)
+  const rows = await footerRows($)
+  expect(rows.slice(1).map(row => row.split(' ')[1])).toEqual(['b', 'c', 'd'])
+})
+
+test('footerFinishedRuns sets how many finished runs the footer shows', { options: { footerFinishedRuns: 1 } }, async ($, on) => {
+  const { clock } = world(on, [], undefined, { config: FOUR_SUITES })
+  await startSession($)
+  await runFourSuites($, clock)
+  const rows = await footerRows($)
+  expect(rows.slice(1).map(row => row.split(' ')[1])).toEqual(['d'])
+})
+
+test('the footer shows every running run, whatever footerFinishedRuns is', { options: { footerFinishedRuns: 1 } }, async ($, on) => {
+  const { clock } = world(on, [], 'bg20', { config: FOUR_SUITES })
+  await startSession($)
+  await runFourSuites($, clock)
+  const rows = await footerRows($)
+  expect(rows.slice(1).map(row => row.split(' ')[1])).toEqual(['a', 'b', 'c', 'd'])
+})
+
+/**
+ * Another writer beats the next `misses` writes to the run list, as a session with many runs
+ * polling at once does; `writes` counts the writes that land. Hooked before the test's first
+ * call, so a test sets `misses` when the contention starts.
+ */
+const contend = (on: On, misses = 0) => {
+  const left = { misses, writes: 0 }
+  on('state.set', { plugin: 'live-tests', key: 'runs' }, (_$, e, next) => {
+    left.misses -= 1
+    left.writes += left.misses < 0 ? 1 : 0
+    return left.misses < 0 ? next(e) : { value: { isSet: false, version: 0 } }
+  })
+  return left
+}
+
+/** More misses than one `update` tries before it gives up. */
+const BUSY = 100
+
+test('run_tests starts its run while another writer keeps beating its writes to the run list', async ($, on) => {
+  const { clock } = world(on, [])
+  contend(on, BUSY)
+  const pending = $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'unit' })
+  await clock.advance(30_000)
+  expect((await pending).result).toMatch(SUMMARY)
+})
+
+test('a poll whose progress writes keep losing skips them, and a later poll catches up', async ($, on) => {
+  const { clock } = world(on, [], 'bg30')
+  const contention = contend(on)
+  await startSession($)
+  await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'unit', background: true })
+  contention.misses = BUSY
+  await clock.advance(600)
+  await clock.advance(30_000)
+  expect(await footerModes($)).toMatch(/^focus ▶ unit \(bg\) 3\/3 100%  1 ✗ \d+s$/)
+})
+
+test('a background run that ends while another writer keeps beating its writes still settles and delivers', async ($, on) => {
+  const { files, rows, clock } = world(on, [], 'bg31')
+  const contention = contend(on)
+  await startSession($)
+  await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'unit', background: true })
+  contention.misses = BUSY
+  complete(files)
+  await clock.advance(30_000)
+  await append($, notification('bg31'))
+  expect(textOf(rows[0] ?? [])).toMatch(SUMMARY)
+  expect(await footerModes($)).toMatch(/^focus ✗ unit 2 ✓  1 ✗/)
+})
+
+test('two identical calls at once under contention start the suite only once', async ($, on) => {
+  const calls: Bash[] = []
+  const { clock } = world(on, calls, 'bg32')
+  contend(on, BUSY)
+  const pending = Promise.all([0, 1].map(() => $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'unit', background: true })))
+  await clock.advance(30_000)
+  const texts = (await pending).map(called => String(called.result))
+  expect(calls).toHaveLength(1)
+  expect(texts.filter(text => /started as background task bg32/.test(text))).toHaveLength(1)
+  expect(texts.filter(text => /is already running for you/.test(text))).toHaveLength(1)
+})
+
+test('polling many runs writes the run list at most once a tick', async ($, on) => {
+  const { clock } = world(on, [], 'bg33', { config: FOUR_SUITES })
+  const contention = contend(on)
+  await startSession($)
+  await Promise.all(['a', 'b', 'c', 'd'].map(suite => $.tool.call({ tool: 'mcp__live-tests__run_tests', suite, background: true })))
+  await clock.advance(600)
+  contention.writes = 0
+  await clock.advance(500)
+  expect(contention.writes).toBeLessThanOrEqual(1)
+})

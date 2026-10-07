@@ -31,6 +31,14 @@ compact summary back: counts, failures with trimmed tracebacks, and the path to 
 A run started by a subagent is labelled with its name, e.g. `unit [worker-2]` (or
 `[subagent]` when it has none); a run from the main conversation has no label.
 
+## Options
+
+Set in `/plugin` under live-tests:
+
+- `footerFinishedRuns` (default 3): the footer shows every running run but only this many
+  finished ones, those that ended last. Hidden runs keep their logs and summaries; the band
+  and the pane still show every run.
+
 ## Background runs and subagents
 
 `run_tests({ background: true })` starts the suite as a single Bash background task and
