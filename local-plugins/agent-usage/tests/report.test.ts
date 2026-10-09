@@ -328,7 +328,7 @@ test('toolJson rss: rssMb beside pssMb, on agents, claude and processes', () => 
   const json = toolJson(busy(), { rss: true, procs: true, limit: 1 })
   expect(json.agents[0]).toMatchObject({ pssMb: 3302, rssMb: 6604 })
   expect(json.agents[0]?.procs?.[0]).toMatchObject({ pssMb: 3000, rssMb: 6000 })
-  expect(json.claude).toEqual({ pssMb: 549, rssMb: 1098, cpuPct: 5 })
+  expect((json as { claude?: unknown }).claude).toEqual({ pssMb: 549, rssMb: 1098, cpuPct: 5 })
 })
 
 test('toolJson agent filter keeps that agent, by name or id', () => {

@@ -3,6 +3,8 @@
 import json
 import os
 
+import pytest
+
 # Duplicated at import, before pytest's fd capture swaps fd 1 out from under us.
 _OUT = os.fdopen(os.dup(1), "w", buffering=1)
 
@@ -16,6 +18,19 @@ def emit(**event):
 
 def pytest_collection_finish(session):
     emit(event="plan", total=len(session.items))
+
+
+_planned = False
+
+
+# Under xdist the controller never collects, so the total comes from the workers, which all collect the same set.
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_node_collection_finished(node, ids):
+    global _planned
+    if _planned:
+        return
+    _planned = True
+    emit(event="plan", total=len(ids))
 
 
 def outcome_of(report):

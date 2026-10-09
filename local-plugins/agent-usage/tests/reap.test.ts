@@ -4,7 +4,6 @@ import { bashFailure, dryRunResult, endedSince, killCommand, nothingLeftResult, 
 import type { ReapTarget } from '../hooks/reap'
 import type { JsonInput } from '../hooks/report'
 import type { AgentUsage, ProcUsage } from '../hooks/usage'
-import { statText } from './world'
 
 const MB = 1024 * 1024
 const AT = Date.UTC(2026, 9, 6, 12, 0, 0)
@@ -86,18 +85,17 @@ test("selectTargets never takes an untracked process, though it is listed under 
   expect(JSON.stringify(picked).includes('mcp.js')).toBe(false)
 })
 
-const statOf = (pid: number, startTicks: number) => statText(pid, { ppid: 1, comm: 'x', startTicks })
+const statOf = (pid: number, start: number) => new Map([[pid, { pid, comm: 'x', ppid: 1, sid: 0, utime: 0, stime: 0, start }]])
 
 const RECHECKS = [
-  ['still the same process: alive', new Map([['/proc/300/stat', statOf(300, 3000)]]), { alive: [target(300, 3400, 'java', 3000)], skipped: [] }],
+  ['still the same process: alive', statOf(300, 3000), { alive: [target(300, 3400, 'java', 3000)], skipped: [] }],
   ['no stat: already gone', new Map(), { alive: [], skipped: [{ pid: 300, reason: 'already gone' }] }],
-  ['another starttime: the pid was reused', new Map([['/proc/300/stat', statOf(300, 3001)]]), { alive: [], skipped: [{ pid: 300, reason: 'pid reused' }] }],
-  ['an unreadable stat: already gone', new Map([['/proc/300/stat', 'garbage']]), { alive: [], skipped: [{ pid: 300, reason: 'already gone' }] }],
+  ['another starttime: the pid was reused', statOf(300, 3001), { alive: [], skipped: [{ pid: 300, reason: 'pid reused' }] }],
 ] as const
 
-for (const [name, files, expected] of RECHECKS) {
+for (const [name, stats, expected] of RECHECKS) {
   test(`recheck: ${name}`, () => {
-    expect(recheck([target(300, 3400, 'java', 3000)], files)).toEqual(expected)
+    expect(recheck([target(300, 3400, 'java', 3000)], stats)).toEqual(expected)
   })
 }
 

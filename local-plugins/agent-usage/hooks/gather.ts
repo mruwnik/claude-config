@@ -1,9 +1,55 @@
 import type { BashRecord } from '../types'
 import { SLACK_MS, startedMs } from './attribute'
 import { parseChildren, parseStat } from './proc'
-import type { Stat } from './proc'
+import type { CpuTimes, Stat } from './proc'
 
-export type Source = { reader: Reader; claudePid: number; comm: string; bootMs: number; cores: number; note: string }
+export type Machine = {
+  mem: { availableKb: number; totalKb: number } | undefined
+  loadavg: { load1: number; load5: number } | undefined
+  /** The machine's CPU ticks so far; absent where they cannot be read (macOS). */
+  cpuTimes?: CpuTimes | undefined
+}
+
+/** What the OS handlers may do: run a fixed argv (no shell), read a file, list a directory's names. */
+export type Host = {
+  run: (argv: readonly string[], env?: Record<string, string>) => Promise<{ stdout: string }>
+  read: (path: string) => Promise<string>
+  list: (dir: string) => Promise<string[]>
+}
+
+/** One operating system's way of reading processes: the sampler and agent_reap see only this. */
+export type System = {
+  claudePid: number
+  comm: string
+  bootMs: number
+  cores: number
+  /** How the processes are read, for /agent-usage. */
+  note: string
+  /** PSS where the kernel splits shared pages between their users (Linux); RSS where it cannot (macOS). */
+  memory: 'PSS' | 'RSS'
+  /** Every process on the machine. */
+  scanAll: () => Promise<Map<number, Stat>>
+  /** The process trees under these roots. */
+  walk: (roots: readonly number[]) => Promise<Map<number, Stat>>
+  /** These processes as they are now; a gone one is absent. */
+  stats: (pids: readonly number[]) => Promise<Map<number, Stat>>
+  argvs: (pids: readonly number[]) => Promise<Map<number, string[]>>
+  /** The agent each one's environment names (LIVE_TESTS_AGENT_ID), undefined for none. */
+  envAgents: (pids: readonly number[]) => Promise<Map<number, string | undefined>>
+  /** Bytes per process; `pss` is RSS where there is no PSS. */
+  memoryOf: (pids: readonly number[]) => Promise<Map<number, { pss: number; rss: number }>>
+  machine: () => Promise<Machine>
+}
+
+/** The processes of `stats` under these roots, roots included. */
+export const descendantsOf = (stats: ReadonlyMap<number, Stat>, roots: readonly number[]) => {
+  const kids = new Map<number, number[]>()
+  stats.forEach(stat => kids.set(stat.ppid, [...(kids.get(stat.ppid) ?? []), stat.pid]))
+  const under = (pid: number, seen: ReadonlySet<number>): number[] =>
+    seen.has(pid) || !stats.has(pid) ? [] : [pid, ...(kids.get(pid) ?? []).flatMap(child => under(child, new Set([...seen, pid])))]
+  const pids = new Set(roots.flatMap(root => under(root, new Set())))
+  return new Map([...stats].filter(([pid]) => pids.has(pid)))
+}
 
 /** Reads /proc in batches: the files it could read (a vanished process's are just absent), and directories' entry names. */
 export type Reader = {
@@ -12,9 +58,9 @@ export type Reader = {
   list: (dirs: readonly string[]) => Promise<ReadonlyMap<string, readonly string[]>>
 }
 
-const readStats = async (reader: Reader, pids: readonly number[]) => {
+export const readStats = async (reader: Reader, pids: readonly number[]) => {
   const files = await reader.read(pids.map(pid => `/proc/${pid}/stat`))
-  return pids.map(pid => parseStat(files.get(`/proc/${pid}/stat`) ?? '')).filter(stat => stat !== undefined && stat.pid !== 0)
+  return pids.map(pid => parseStat(files.get(`/proc/${pid}/stat`) ?? '')).filter((stat): stat is Stat => stat !== undefined && stat.pid !== 0)
 }
 
 /** Every child of these processes, from each thread's children file. */

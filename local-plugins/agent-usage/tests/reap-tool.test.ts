@@ -9,9 +9,9 @@ const REAP = 'mcp__agent-usage__agent_reap'
 const fixer = (status: string) => ({ id: 'a1', name: 'fixer-1', description: 'fix', type: 'general-purpose', status })
 
 /** A subagent's background command (shell 200, node 201 of 3 GB) left behind once it stopped, sampled once. */
-const leftovers = async ($: Engine, on: Parameters<typeof world>[0], status = 'completed') => {
+const leftovers = async ($: Engine, on: Parameters<typeof world>[0], status = 'completed', os: 'Linux' | 'Darwin' = 'Linux') => {
   const agents = [fixer(status)]
-  const w = world(on, { agents })
+  const w = world(on, { agents, os })
   await startSession($)
   await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true, agentId: 'a1' } as never)
   await w.clock.advance(5000)
@@ -34,19 +34,21 @@ test('agent_reap is registered beside agent_usage with its one-line description'
   ])
 })
 
-test("agent_reap sends TERM through the Bash tool to a stopped agent's leftovers, and reports them killed", async ($, on) => {
-  const { clock, kills } = await leftovers($, on)
-  expect(await reap($, clock, { agent: 'fixer-1' })).toEqual({
-    agent: 'fixer-1',
-    killed: [
-      { pid: 201, cmd: 'node big.js', pssMb: 3072 },
-      { pid: 200, cmd: expect.stringMatching(/^\/bin\/bash -c /), pssMb: 4 },
-    ],
-    survived: [],
-    skipped: [],
+for (const os of ['Linux', 'Darwin'] as const) {
+  test(`${os}: agent_reap sends TERM through the Bash tool to a stopped agent's leftovers, and reports them killed`, async ($, on) => {
+    const { clock, kills } = await leftovers($, on, 'completed', os)
+    expect(await reap($, clock, { agent: 'fixer-1' })).toEqual({
+      agent: 'fixer-1',
+      killed: [
+        { pid: 201, cmd: 'node big.js', pssMb: 3072 },
+        { pid: 200, cmd: expect.stringMatching(/^\/bin\/bash -c /), pssMb: 4 },
+      ],
+      survived: [],
+      skipped: [],
+    })
+    expect(kills).toEqual(['kill -TERM 201 200'])
   })
-  expect(kills).toEqual(['kill -TERM 201 200'])
-})
+}
 
 test('agent_reap sends KILL, again through Bash, only to what outlived TERM', async ($, on) => {
   const { clock, kills, reaping } = await leftovers($, on)

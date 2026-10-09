@@ -35,17 +35,21 @@ test("a background command's processes are the main conversation's; with footer 
   expect(text).toMatch(/claude pid 100 \(claude\), reading \/proc through \$\.fs/)
 })
 
-test('a process the command left behind keeps its agent after its shell exits', async ($, on) => {
-  const { procs, clock } = world(on)
-  await startSession($)
-  await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true })
-  await clock.advance(5000)
-  procs.delete(200)
-  procs.set(CLAUDE, { ...(procs.get(CLAUDE) as Fake), children: [300] })
-  procs.set(201, { ...(procs.get(201) as Fake), ppid: 1 })
-  await clock.advance(5000)
-  expect(await usageText($)).toMatch(/\nmain +3\.0G .*\n {4}pid 201 /)
-})
+const OSES = ['Linux', 'Darwin'] as const
+
+for (const os of OSES) {
+  test(`${os}: a process the command left behind keeps its agent after its shell exits`, async ($, on) => {
+    const { procs, clock } = world(on, { os })
+    await startSession($)
+    await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true })
+    await clock.advance(5000)
+    procs.delete(200)
+    procs.set(CLAUDE, { ...(procs.get(CLAUDE) as Fake), children: [300] })
+    procs.set(201, { ...(procs.get(201) as Fake), ppid: 1 })
+    await clock.advance(5000)
+    expect(await usageText($)).toMatch(/\nmain +3\.0G .*\n {4}pid 201 /)
+  })
+}
 
 test('/agent-usage before any sample has run takes one', async ($, on) => {
   world(on)
@@ -86,13 +90,31 @@ test('when $.fs reads /proc empty, it is read through grep and find instead, and
   const text = await usageText($)
   expect(text).toMatch(/\nmain +3\.0G .*\n {4}pid 201 +3\.0G +0% +node big\.js\n {4}pid 200 /)
   expect(text).toMatch(/claude pid 100 \(claude\), reading \/proc through grep\/find subprocesses \(\$\.fs\.read came back empty for \/proc\/self\/stat\)/)
-  expect(new Set(runs.map(argv => argv[0]))).toEqual(new Set(['grep', 'find']))
+  expect(new Set(runs.map(argv => argv[0]))).toEqual(new Set(['uname', 'grep', 'find']))
 })
 
-test("a subagent's command is that agent's, under its name", async ($, on) => {
-  const { clock } = world(on, { agents: [{ id: 'a1', name: 'integration-12', description: 'run tests', type: 'general-purpose', status: 'running' }] })
+test('on macOS, processes are read through ps and sysctl, never /proc, and memory is RSS', async ($, on) => {
+  const { clock, runs, procs } = world(on, { os: 'Darwin' })
   await startSession($)
-  await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true, agentId: 'a1' } as never)
+  await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true })
   await clock.advance(5000)
-  expect(await usageText($)).toMatch(/\nintegration-12 +3\.0G /)
+  // 12 s of CPU in 5 s: 240% of one core.
+  procs.set(201, { ...(procs.get(201) as Fake), ticks: 1200 })
+  await clock.advance(5000)
+  const text = await usageText($)
+  expect(text).toMatch(/\nmain +3\.0G .* 240% .*\n {4}pid 201 +3\.0G +240% +node big\.js\n {4}pid 200 +4\.0M .*eval/)
+  expect(text).toMatch(/\nclaude children \(MCP, untracked\) +50M .*\n {4}pid 300 +50M +0% +node mcp\.js/)
+  expect(text).toMatch(/Memory is RSS/)
+  expect(text).toMatch(/claude pid 100 \(claude\), reading processes through ps and sysctl/)
+  expect(new Set(runs.map(argv => argv[0]))).toEqual(new Set(['uname', 'sh', 'sysctl', 'ps']))
 })
+
+for (const os of OSES) {
+  test(`${os}: a subagent's command is that agent's, under its name`, async ($, on) => {
+    const { clock } = world(on, { os, agents: [{ id: 'a1', name: 'integration-12', description: 'run tests', type: 'general-purpose', status: 'running' }] })
+    await startSession($)
+    await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true, agentId: 'a1' } as never)
+    await clock.advance(5000)
+    expect(await usageText($)).toMatch(/\nintegration-12 +3\.0G /)
+  })
+}

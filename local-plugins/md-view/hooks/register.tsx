@@ -8,9 +8,9 @@ import type { Entry } from './complete'
 import { snapshotPath } from './diff'
 import type { Span } from './inline'
 import { sanitize } from './render'
-import type { Mark, Row, TableSpan, Tint } from './render'
+import type { ImageAt, Mark, PixelSize, Row, TableSpan, Tint } from './render'
 import { resolvePath } from './snapshot'
-import { clampOffset, GUTTER, headerText, jumpOffset, layoutDoc, position, scrollStep, visibleRows } from './view'
+import { clampOffset, GUTTER, headerText, jumpOffset, layoutDoc, placeImages, position, scrollStep, visibleRows } from './view'
 import { cutToWidth, strWidth } from './width'
 
 const PANE = 'md-view'
@@ -38,6 +38,16 @@ const REVIEW_COLUMNS = 20
 const MAX_CANDIDATES = 40
 // the editor's `Client` key, and what `e: edit` / `e: view` take beside the header line
 const EDITOR = 'editor'
+// where images are kept once converted to PNG, the one format the terminal's Image reads
+const IMAGE_CACHE = '/Users/dan/Library/Caches/claude-md-images'
+
+type Measured = PixelSize & { file: string }
+
+// Pixel sizes by image source, and the converted file each is drawn from. Only grows: the layout cache keys on its size.
+const measured = new Map<string, Measured>()
+const measuring = new Set<string>()
+const NO_SIZES: ReadonlyMap<string, PixelSize> = new Map()
+let canShowImages: Promise<boolean> | undefined
 const EDIT_COLUMNS = 8
 // a Client's props and posts are bounded at 100,000 characters: room left for the rest of them
 const MAX_EDIT_CHARS = 90_000
@@ -175,6 +185,43 @@ const startPolling = ($: EngineInterface) => {
 }
 
 const absOf = async ($: EngineInterface, d: MdViewDoc): Promise<string> => d.absPath ?? absolutePath($, d.path)
+
+/** Whether this terminal draws pixels (Ghostty, kitty): elsewhere an image would only hold empty rows. */
+const terminalShowsImages = ($: EngineInterface): Promise<boolean> => {
+  canShowImages ??= $.process
+    .run(['/usr/bin/printenv', 'TERM_PROGRAM', 'TERM'])
+    .then(({ stdout }) => /^(ghostty|xterm-kitty)$/m.test(stdout))
+    .catch(() => false)
+  return canShowImages
+}
+
+// FNV-1a: a stable file name per source, nothing cryptographic needed.
+const cacheFile = (src: string): string => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < src.length; i++) hash = Math.imul(hash ^ src.charCodeAt(i), 0x01000193)
+  return `${IMAGE_CACHE}/${(hash >>> 0).toString(16)}.png`
+}
+
+/** Where `src` is read from: a URL as it is, a path against the doc's own folder. */
+const imageSource = (src: string, docPath: string): string =>
+  /^https?:\/\//.test(src) || src.startsWith('/') ? src : `${docPath.slice(0, docPath.lastIndexOf('/') + 1)}${src}`
+
+/** Converts and measures each image the layout has not sized yet, in the background; each one done redraws the pane. */
+const measureImages = ($: EngineInterface, rows: Row[], docPath: string) => {
+  const pending = rows.flatMap(r => (r.image !== undefined && r.image.rows === undefined ? [r.image.src] : []))
+  for (const src of pending) {
+    if (measuring.has(src)) continue
+    measuring.add(src)
+    const file = cacheFile(imageSource(src, docPath))
+    void $.process.run([`${$.plugin.root}/bin/to-png.sh`, imageSource(src, docPath), file], { timeoutMs: 30_000 }).then(({ exitCode, stdout }) => {
+      const [pixelsWide, pixelsHigh] = stdout.trim().split(' ').map(Number)
+      // a failed image stays its alt until md-view reloads: retrying on every draw would rerun the helper per scroll
+      if (exitCode !== 0 || !pixelsWide || !pixelsHigh) return
+      measured.set(src, { pixelsWide, pixelsHigh, file })
+      $.ui.invalidate('ui.render')
+    })
+  }
+}
 
 const openDoc = async ($: EngineInterface, path: string): Promise<Opened> => {
   const fresh = await readFile($, path)
@@ -343,6 +390,27 @@ const onEditorMessage = async ($: EngineInterface, data: MdViewEditorMessage) =>
 
 type Elements = ReturnType<EngineInterface['ui']['resolve']>
 
+/** An image over the rows it holds, its row's prefix (a list marker) beside it; its alt where this surface has no Image. */
+const drawImage = (elements: Elements, row: Row, image: Required<ImageAt>, key: string) => {
+  const { Box, Text } = elements
+  const file = measured.get(image.src)?.file
+  const prefix = ' '.repeat(GUTTER) + row.spans.map(s => s.text).join('')
+  if (!('Image' in elements) || file === undefined) {
+    return (
+      <Text key={key} dimColor wrap="truncate">
+        {prefix}[image: {image.alt}]
+      </Text>
+    )
+  }
+  const { Image } = elements
+  return (
+    <Box key={key} flexDirection="row" height={image.rows}>
+      <Text>{prefix}</Text>
+      <Image source={{ file, format: 'png' }} columns={image.columns} rows={image.rows} alt={image.alt || ' '} />
+    </Box>
+  )
+}
+
 const drawSpan = ({ Text }: Elements, span: Span, key: string) => {
   const { text, ...style } = span
   return Object.keys(style).length === 0 ? text : (
@@ -510,9 +578,13 @@ export const register: Register = on => {
       )
     }
 
-    const layout = layoutDoc(shown.text, shown.baseline, Math.max(1, columns - GUTTER))
     const headerRows = shown.isMissing ? 2 : 1
     const windowRows = Math.max(1, e.props.scroll.bodyRows - headerRows)
+    const hasImages = shown.text.includes('![') || shown.text.includes('<img')
+    const showsImages = hasImages && 'Image' in elements && (await terminalShowsImages($))
+    const images = { sizes: showsImages ? measured : NO_SIZES, maxRows: windowRows }
+    const layout = layoutDoc(shown.text, shown.baseline, Math.max(1, columns - GUTTER), images)
+    if (showsImages) measureImages($, layout.rows, await absOf($, shown))
     const rowCount = layout.rows.length
     drawn = { rowCount, windowRows }
     const shownView = await read($, view)
@@ -569,7 +641,9 @@ export const register: Register = on => {
           </Text>
         )}
         <Box key="rows" flexDirection="column">
-          {rows.map((r, k) => drawRow(elements, r.row, r.isSticky, columns, `row-${k}`))}
+          {placeImages(rows).map((p, k) =>
+            p.kind === 'image' ? drawImage(elements, p.shown.row, p.image, `row-${k}`) : drawRow(elements, p.shown.row, p.shown.isSticky, columns, `row-${k}`),
+          )}
           {filler}
         </Box>
         {/* one row past the body: the engine then has a row to scroll, so arrows raise ui.scroll and Home/End (by contentRows) differ from a page (by bodyRows) */}

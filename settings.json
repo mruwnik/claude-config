@@ -50,7 +50,6 @@
     ],
     "defaultMode": "default"
   },
-  "model": "opus",
   "hooks": {
     "SessionStart": [
       {
@@ -140,7 +139,7 @@
   },
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": false,
-    "typescript-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": false,
     "rust-analyzer-lsp@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
     "equistamp-all@equistamp-skills": true,
@@ -148,7 +147,8 @@
     "cc-plugin-you-should-know@builtin": true,
     "md-view@local-plugins": true,
     "live-tests@local-plugins": true,
-    "agent-usage@local-plugins": true
+    "agent-usage@local-plugins": true,
+    "md-images@local-plugins": true
   },
   "extraKnownMarketplaces": {
     "equistamp-skills": {
@@ -160,24 +160,55 @@
     "local-plugins": {
       "source": {
         "source": "directory",
-        "path": "/home/dan/.claude/local-plugins"
+        "path": "/Users/dan/.claude/local-plugins"
       }
     }
   },
   "effortLevel": "high",
-  "skipWorkflowUsageWarning": true,
-  "autoCompactEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "useAutoModeDuringPlan": false,
-  "voiceEnabled": true,
-  "feedbackSurveyState": {
-    "lastShownTime": 1754166832429
-  },
   "pluginConfigs": {
     "agent-usage@local-plugins": {
       "options": {
         "footer": "always"
       }
     }
+  },
+  "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
+  "autoCompactEnabled": true,
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "useAutoModeDuringPlan": false,
+  "autoMode": {
+    "environment": [
+      "### Org-wide",
+      "**Organization**: EquiStamp (GitHub org `EquiStamp`, remote `github.com:EquiStamp/admin.git`)",
+      "**Cloud provider(s)**: None configured",
+      "**Repository visibility**: not queryable here via gh — treat as possibly public per unverified-visibility rule; scope commits/pushes to this repo as if public (only this repo's own work belongs here)",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: None configured",
+      "**Default / protected branches**: default branch `master`; protected-branch/ruleset status not queryable here — treat as unverified, do not assume unprotected",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: None configured",
+      "**Host containment**: None configured — assume Claude Code runs on an ordinary developer machine with open internet",
+      "**Source control**: The trusted repo (github.com:EquiStamp/admin.git) and its remotes only — no additional orgs configured",
+      "**Trusted internal domains**: None configured",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: None configured",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: .env, qbo-token.json, scripts/.dogfood_wise_private.pem, .env-real, .env-local, .env.bak-migration, .env.sim, and other .gitignore'd secret-like paths in this repo — share only with audiences cleared at the [named+specifics] bar",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development (admin-tools MCP server for org management; GitHub OAuth, ruff/mypy pre-commit checks)",
+      "**Trusted repo**: /Users/dan/code/admin (github.com:EquiStamp/admin.git) — visibility unverified, treat as possibly public; this repo's own work only",
+      "**Org-specific CLIs**: None configured",
+      "routine under src/, tests/, scripts/ prefixes within ~/code/admin (the three mypy/ruff check roots) treated as ordinary project paths, not elevated trust"
+    ]
+  },
+  "voiceEnabled": true,
+  "feedbackSurveyState": {
+    "lastShownTime": 1754166832429
   }
 }

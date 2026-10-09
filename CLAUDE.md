@@ -67,12 +67,17 @@ When you're **processing** (filtering/summarizing) rather than displaying the re
 - **TDD** — write a failing test first, watch it fail, then implement to green. Default for features and bugfixes, unless Dan says otherwise.
 - Check memory/CPU per agent with `mcp__agent-usage__agent_usage` (load it with ToolSearch), not `ps`: it attributes processes to agents by process tree and lists leftovers of stopped agents under `unattributed`. Use it before spawning heavy work, or when memory runs low
 - To clean up a stopped agent's leftover processes, use `mcp__agent-usage__agent_reap` (agent name or id; `dryRun: true` to preview) instead of killing pids by hand: it only kills what agent_usage lists as unattributed for that agent, rechecks pid:starttime, and sends `kill` through the Bash tool
+- When writing tests, first check if there's a preexisting test that would be better to change - don't produce tests just for the fun of it.
+- For each test, consider whether it's really a good, timeless test that will stay useful. Better to have a few really solid tests than thousands of tests that are useless
 
 ---
 
 ## Code preferences
 
 - Don't worry about backward compatibility. By default assume that it's fine to change stuff, as long as the whole codebase is updated. If unsure, just ask.
+- Comments are a cost. Code is a cost. Better to delete than add. Before writing anything consider if the same can be achieved by deleting something.
+- Comments should only describe why a piece of code does what it does. Not what - that is the code, not where this decision came from - thats in the docs, not what things used to look like - that's in git.
+- Avoid too much prose
 
 ### Style
 

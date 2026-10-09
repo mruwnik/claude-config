@@ -41,10 +41,11 @@ const EVAL = /&& eval '([\s\S]*)'(?: < \/dev\/null)? && pwd -P >\| \S+\s*$/
 
 /**
  * The exact command a Bash tool shell runs, from its argv, or undefined for any other process.
- * Any argument may hold the script, so a sandbox launcher in front of `bash -c` still matches.
+ * Any argument may hold the script, so a sandbox launcher in front of `bash -c` still matches;
+ * so may all of them joined, as macOS ps gives the script split on its spaces.
  */
 export const evalCommand = (argv: readonly string[]): string | undefined => {
-  const quoted = argv.map(arg => EVAL.exec(arg)?.[1]).find(match => match !== undefined)
+  const quoted = [...argv, argv.join(' ')].map(arg => EVAL.exec(arg)?.[1]).find(match => match !== undefined)
   return quoted?.replaceAll(`'"'"'`, `'`)
 }
 

@@ -4,7 +4,7 @@ import { headerRowCount, layoutTable, tableAt } from './table'
 import type { TableSegment } from './table'
 import { breakToWidth, cutToWidth, strWidth } from './width'
 
-export type RowKind = 'text' | 'heading' | 'rule' | 'code' | 'table' | 'blank' | 'old'
+export type RowKind = 'text' | 'heading' | 'rule' | 'code' | 'table' | 'blank' | 'old' | 'image'
 export type Mark = 'added' | 'changed' | 'removed'
 
 /** One terminal row of the drawn doc: never wider than the width it was laid out for. */
@@ -15,6 +15,8 @@ export type Row = {
   lines?: [number, number]
   /** Set on every row of a table: which one (TableSpan.id). */
   table?: { id: number }
+  /** Set on an image's first row: what to draw over it and the rows below; without `columns` and `rows` it is not measured yet. */
+  image?: ImageAt
   /** Set by the diff marks: how the block this row draws changed. */
   mark?: Mark
   /** Set by the diff marks on rows of a whole block added or removed: the row's background. */
@@ -32,6 +34,14 @@ export type TableSpan = { id: number; start: number; headerRows: number; end: nu
 
 export type Rendered = { rows: Row[]; tables: TableSpan[] }
 
+/** An image a row draws: its box in cells once its size is known. */
+export type ImageAt = { src: string; alt: string; columns?: number; rows?: number }
+
+export type PixelSize = { pixelsWide: number; pixelsHigh: number }
+
+/** The pixel sizes measured so far, by `src`, and the tallest an image may be (the window, so it can be seen whole). */
+export type ImageOptions = { sizes: ReadonlyMap<string, PixelSize>; maxRows: number }
+
 type Line = { text: string; n: number }
 
 type Block =
@@ -43,6 +53,7 @@ type Block =
   | { kind: 'quote'; children: Block[] }
   | { kind: 'list'; isOrdered: boolean; start: number; delimiter: string; isLoose: boolean; items: Item[] }
   | { kind: 'html'; lines: Line[] }
+  | { kind: 'image'; src: string; alt: string; width: string | undefined; from: number }
 
 type Item = { task: boolean | undefined; children: Block[]; from: number }
 
@@ -57,6 +68,12 @@ const SETEXT_1 = /^ {0,3}=+[ \t]*$/
 const SETEXT_2 = /^ {0,3}-+[ \t]*$/
 const HTML = /^ {0,3}<(?:[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)|\/[A-Za-z]|!--|\?|![A-Z])/
 const INDENTED = /^ {4}/
+const MARKDOWN_IMAGE = /^ {0,3}!\[([^\]]*)\]\(([^)\s]+)\)[ \t]*$/
+const HTML_IMAGE = /^ {0,3}<img\s([^>]*?)\/?>[ \t]*$/
+const ATTRIBUTE = /(\w+)\s*=\s*"([^"]*)"/g
+const IMAGE_COLUMNS = 30
+// Terminal cells are about twice as tall as wide.
+const CELL_ASPECT = 2
 const TASK = /^\[([ xX])\](?:[ \t]+|$)/
 
 const BULLETS = ['•', '◦', '▪'] as const
@@ -250,6 +267,17 @@ const parseList = (lines: Line[], texts: string[], i: number): { block: Block; n
   return { block: { kind: 'list', isOrdered, start: isOrdered ? parseInt(bullet, 10) : 1, delimiter, isLoose, items }, next: j }
 }
 
+/** A line that is nothing but an image, as markdown or as an `<img>` tag with a `src`. */
+const imageLine = (t: string, from: number): Extract<Block, { kind: 'image' }> | undefined => {
+  const markdown = MARKDOWN_IMAGE.exec(t)
+  if (markdown !== null) return { kind: 'image', alt: markdown[1] as string, src: markdown[2] as string, width: undefined, from }
+  const html = HTML_IMAGE.exec(t)
+  if (html === null) return undefined
+  const attributes = new Map([...(html[1] as string).matchAll(ATTRIBUTE)].map(m => [m[1] as string, m[2] as string]))
+  const src = attributes.get('src')
+  return src === undefined ? undefined : { kind: 'image', src, alt: attributes.get('alt') ?? '', width: attributes.get('width'), from }
+}
+
 /** The blocks of `lines` (a doc, or the inside of a quote or list item, each line keeping its source line number). */
 const parseBlocks = (lines: Line[]): Block[] => {
   const texts = lines.map(l => l.text)
@@ -326,6 +354,12 @@ const parseBlocks = (lines: Line[]): Block[] => {
       i = j
       continue
     }
+    const image = imageLine(t, line.n)
+    if (image !== undefined) {
+      blocks.push(image)
+      i++
+      continue
+    }
     if (HTML.test(t)) {
       let j = i
       while (j < lines.length && !BLANK.test(texts[j] as string)) j++
@@ -356,7 +390,7 @@ const parseBlocks = (lines: Line[]): Block[] => {
   return blocks
 }
 
-type Ctx = { depth: number; tables: { next: number; headers: Map<number, number> }; patches: Patches }
+type Ctx = { depth: number; tables: { next: number; headers: Map<number, number> }; patches: Patches; images: ImageOptions }
 
 const blank = (): Row => ({ spans: [], kind: 'blank' })
 
@@ -413,6 +447,31 @@ const listRows = (block: Extract<Block, { kind: 'list' }>, width: number, ctx: C
     return k > 0 && block.isLoose ? [blank(), ...rows] : rows
   })
 
+/** `width` as columns (`8`) or a share of the room (`25%`); absent or unreadable, a moderate default; never wider than the room. */
+const imageColumns = (width: string | undefined, room: number): number => {
+  const percent = width === undefined ? null : /^(\d+(?:\.\d+)?)%$/.exec(width)
+  const wanted = percent !== null ? (room * Number(percent[1])) / 100 : Number(width) || IMAGE_COLUMNS
+  return Math.max(1, Math.min(room, Math.round(wanted)))
+}
+
+/** An image's rows: the first carries what to draw, the rest hold its place; unmeasured, one row of its alt. */
+const imageRows = (block: Extract<Block, { kind: 'image' }>, width: number, ctx: Ctx): Row[] => {
+  const at: [number, number] = [block.from, block.from + 1]
+  const size = ctx.images.sizes.get(block.src)
+  if (size === undefined) {
+    return [{ spans: [{ text: `[image: ${block.alt}]`, dimColor: true }], kind: 'image', lines: at, image: { src: block.src, alt: block.alt } }]
+  }
+  const tall = size.pixelsHigh / size.pixelsWide / CELL_ASPECT
+  let columns = imageColumns(block.width, width)
+  let rows = Math.max(1, Math.round(columns * tall))
+  if (rows > ctx.images.maxRows) {
+    rows = Math.max(1, ctx.images.maxRows)
+    columns = Math.max(1, Math.min(width, Math.round(rows / tall)))
+  }
+  const image: ImageAt = { src: block.src, alt: block.alt, columns, rows }
+  return Array.from({ length: rows }, (_, k): Row => ({ spans: [], kind: 'image', lines: at, ...(k === 0 ? { image } : {}) }))
+}
+
 const renderBlock = (block: Block, width: number, ctx: Ctx): Row[] => {
   switch (block.kind) {
     case 'heading':
@@ -431,6 +490,8 @@ const renderBlock = (block: Block, width: number, ctx: Ctx): Row[] => {
       return listRows(block, width, ctx)
     case 'html':
       return block.lines.flatMap(l => textRows([{ text: l.text }], width, 'text', [l.n, l.n + 1]))
+    case 'image':
+      return imageRows(block, width, ctx)
   }
 }
 
@@ -452,11 +513,17 @@ export const tableSpans = (rows: Row[], headers: ReadonlyMap<number, number>): T
 /**
  * The doc (already sanitized) as terminal rows of at most `width` cells:
  * headings, paragraphs with inline styles, lists, task lists, quotes, code,
- * rules, tables (table.ts) and HTML as plain text, a blank row between blocks.
+ * rules, tables (table.ts), images on lines of their own (sized by `images`)
+ * and HTML as plain text, a blank row between blocks.
  */
-export const renderMarkdown = (text: string, width: number, patches: Patches = new Map()): Rendered & { headers: ReadonlyMap<number, number> } => {
+export const renderMarkdown = (
+  text: string,
+  width: number,
+  patches: Patches = new Map(),
+  images: ImageOptions = { sizes: new Map(), maxRows: Number.POSITIVE_INFINITY },
+): Rendered & { headers: ReadonlyMap<number, number> } => {
   const w = Math.max(1, width)
-  const ctx: Ctx = { depth: 0, tables: { next: 0, headers: new Map() }, patches }
+  const ctx: Ctx = { depth: 0, tables: { next: 0, headers: new Map() }, patches, images }
   const lines = text.split('\n').map((t, n) => ({ text: t, n }))
   const rows = renderBlocks(parseBlocks(lines), w, ctx, true).map(row => ({ ...row, spans: fitSpans(row.spans, w) }))
   return { rows, tables: tableSpans(rows, ctx.tables.headers), headers: ctx.tables.headers }

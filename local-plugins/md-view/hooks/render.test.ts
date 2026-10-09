@@ -170,3 +170,39 @@ test('a table too narrow for a box falls back to blocks and has no header to pin
   const { tables } = renderMarkdown(`| ${'h'.repeat(20)} | ${'g'.repeat(20)} |\n|---|---|\n| 1 | 2 |\n`, 12)
   expect(tables[0]?.headerRows).toBe(0)
 })
+
+// A 200×300 picture: at 10 columns it is 10 * 300 / 200 / 2 = 8 rows.
+const images = { sizes: new Map([['p.png', { pixelsWide: 200, pixelsHigh: 300 }]]), maxRows: 40 }
+const imageRows = (md: string, width = 60, opts = images): Row[] => renderMarkdown(md, width, new Map(), opts).rows
+
+const imageCases: Array<{ name: string; md: string; want: { columns: number; rows: number } }> = [
+  { name: 'markdown image gets the default width', md: '![cover](p.png)', want: { columns: 30, rows: 23 } },
+  { name: 'img tag width is columns', md: '<img src="p.png" alt="cover" width="10">', want: { columns: 10, rows: 8 } },
+  { name: 'img tag width can be a share of the width', md: '<img src="p.png" alt="cover" width="50%">', want: { columns: 30, rows: 23 } },
+]
+for (const { name, md, want } of imageCases) {
+  test(`image: ${name}`, () => {
+    const rows = imageRows(md)
+    expect(rows.length).toBe(want.rows)
+    expect(rows.every(r => r.kind === 'image')).toBe(true)
+    expect(rows[0]?.image).toEqual({ src: 'p.png', alt: 'cover', ...want })
+    expect(rows.slice(1).every(r => r.image === undefined)).toBe(true)
+  })
+}
+
+test('image: a picture taller than the window shrinks to fit it', () => {
+  const rows = imageRows('![cover](p.png)', 60, { ...images, maxRows: 10 })
+  expect(rows.length).toBe(10)
+  expect(rows[0]?.image).toEqual({ src: 'p.png', alt: 'cover', columns: 13, rows: 10 })
+})
+
+test('image: an unmeasured picture is one placeholder row naming what to measure', () => {
+  const rows = imageRows('![cover](q.png)')
+  expect(rows.map(textOf)).toEqual(['[image: cover]'])
+  expect(rows[0]?.image).toEqual({ src: 'q.png', alt: 'cover' })
+})
+
+test('image: mid-paragraph and in code it stays text', () => {
+  expect(texts('see ![x](p.png) here')).toEqual(['see [image: x] here'])
+  expect(imageRows(`${fence}\n![x](p.png)\n${fence}`).some(r => r.kind === 'image')).toBe(false)
+})

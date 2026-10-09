@@ -24,7 +24,23 @@ export const statText = (pid: number, p: Fake) => {
 export const toolBash = (command: string) => ['/bin/bash', '-c', `source s.sh && eval '${command.replaceAll("'", `'"'"'`)}' && pwd -P >| /tmp/claude-ab-cwd`]
 
 /** A machine with init, claude (pid 100) and an MCP server under it; the Bash call adds its shell and a big node under that. */
-export const world = (on: On, { isFsBlind = false, agents = [] as readonly unknown[] } = {}) => {
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const two = (n: number) => String(n).padStart(2, '0')
+
+/** As `ps -o lstart` prints it under TZ=UTC0: whole seconds. */
+const lstart = (ms: number) => {
+  const d = new Date(ms)
+  return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, ' ')} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())} ${d.getUTCFullYear()}`
+}
+
+/** As `ps -o time` prints it: minutes, then seconds to the hundredth. */
+const cpuTime = (ticks: number) => `${Math.floor(ticks / 6000)}:${((ticks % 6000) / 100).toFixed(2).padStart(5, '0')}`
+
+/** As macOS ps prints arguments: joined by spaces, newline and tab as octal escapes. */
+const visArgs = (argv: readonly string[]) => argv.join(' ').replaceAll('\n', '\\012').replaceAll('\t', '\\011')
+
+export const world = (on: On, { isFsBlind = false, os = 'Linux' as 'Linux' | 'Darwin', agents = [] as readonly unknown[] } = {}) => {
   const procs = new Map<number, Fake>([
     [1, { ppid: 0, comm: 'systemd', startTicks: 1, argv: ['/sbin/init'] }],
     [CLAUDE, { ppid: 1, comm: 'claude', startTicks: 5000, argv: ['claude'], pssKb: 500 * 1024, children: [300] }],
@@ -84,10 +100,10 @@ export const world = (on: On, { isFsBlind = false, agents = [] as readonly unkno
     const prefix = `${dir}/`
     return [...new Set([...files().keys()].filter(path => path.startsWith(prefix)).map(path => path.slice(prefix.length).split('/')[0] ?? ''))]
   }
-  // A blind $.fs reads procfs files as their reported size: empty.
+  // A blind $.fs reads procfs files as their reported size: empty. macOS has no /proc at all.
   on('fs.read', (_$, e) => {
     reads.push(e.path)
-    const text = files().get(e.path)
+    const text = os === 'Darwin' ? undefined : files().get(e.path)
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: isFsBlind ? '' : text }
   })
@@ -95,15 +111,49 @@ export const world = (on: On, { isFsBlind = false, agents = [] as readonly unkno
   // grep -asH -e '' -- <files> and find <dirs> -mindepth 1 -maxdepth 1 -printf '%p\n', as the fallback runs them; grep's own /proc/self is a child of claude.
   const runs: string[][] = []
   const reads: string[] = []
+  const sysctl = (name: string) =>
+    ({
+      'kern.boottime': `{ sec = ${BOOT_S}, usec = 0 } Tue Nov 14 22:13:20 2023`,
+      'hw.ncpu': '4',
+      'vm.loadavg': '{ 7.49 6.05 4.80 }',
+      'hw.memsize': String(32_000 * 1024 * 1024),
+      'kern.memorystatus_level': String(Math.round((mem.availableMb * 100) / 32_000)),
+    })[name] ?? ''
+  /** `ps [-E] -ww -o <cols> (-A | -p <pids>)`, as the macOS handler runs it, from the same processes. */
+  const ps = (args: readonly string[]) => {
+    const cols = (args[args.indexOf('-o') + 1] ?? '').split(',').map(col => col.replace('=', ''))
+    const pids = args.includes('-A') ? [...procs.keys()] : (args[args.indexOf('-p') + 1] ?? '').split(',').map(Number).filter(pid => procs.has(pid))
+    const env = (p: Fake) => (args.includes('-E') ? (p.environ ?? 'PATH=/bin\0').split('\0').filter(v => v !== '') : [])
+    const col = (pid: number, p: Fake, name: string) =>
+      ({
+        pid: String(pid).padStart(5),
+        ppid: String(p.ppid).padStart(5),
+        time: cpuTime(p.ticks ?? 0).padStart(10),
+        rss: String(p.pssKb ?? 0).padStart(8),
+        lstart: lstart(BOOT_MS + (p.startTicks * 1000) / 100),
+        ucomm: p.comm,
+        args: visArgs(p.argv ?? []),
+        command: visArgs([...(p.argv ?? []), ...env(p)]),
+      })[name] ?? ''
+    return pids.map(pid => cols.map(name => col(pid, procs.get(pid) as Fake, name)).join(' ')).join('\n')
+  }
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
     const [tool, ...args] = e.argv
+    const answer = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout: stdout === '' ? '' : `${stdout}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (tool === 'uname') return answer(os)
+    if (os === 'Darwin') {
+      if (tool === 'sh') return answer(String(CLAUDE))
+      if (tool === 'sysctl') return answer(args.filter(arg => arg !== '-n').map(sysctl).join('\n'))
+      if (tool === 'ps') return answer(ps(args))
+      return answer('', 1)
+    }
     const grepped = (path: string) => (path === '/proc/self/stat' ? statText(999, { ppid: CLAUDE, comm: 'grep', startTicks: 20_000 }) : files().get(path))
     const lines =
       tool === 'grep'
         ? args.slice(args.indexOf('--') + 1).flatMap(path => (grepped(path) ?? '').split('\n').filter(line => line !== '').map(line => `${path}:${line}`))
         : args.slice(0, args.indexOf('-mindepth')).flatMap(dir => namesIn(dir).map(name => `${dir}/${name}`))
-    return { value: { exitCode: 0, stdout: lines.map(line => `${line}\n`).join(''), stderr: '' } }
+    return answer(lines.join('\n'))
   })
   // `kill -TERM|-KILL <pids>`, as agent_reap sends it through Bash: recorded, never run. TERM ends all
   // but the stubborn, KILL all but the unkillable; `answer: 'deny'` refuses it as the permission check would.
@@ -138,6 +188,6 @@ export const startSession = ($: Engine) => $.session.start({ cwd: '/proj', surfa
 
 export const usageText = async ($: Engine) => {
   const { text } = await $.command.run({ command: 'agent-usage', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 200 } })
-  return text
+  return text ?? ''
 }
 

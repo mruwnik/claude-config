@@ -3,11 +3,13 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { attribute, envCandidates, procKey, startedMs } from './attribute'
 import type { Proc } from './attribute'
-import { argvNeeded, readArgvs, readEnvirons, readPss, reapersOf, scanAll, walk } from './gather'
-import type { Reader, Source } from './gather'
-import { parseArgv, parseBtime, parseCpuCount, parseCpuTimes, parseEnvAgent, parseGrepOutput, parseLoadavg, parseMeminfo, parsePss, parseRss, parseStat, systemCpuPct } from './proc'
+import { darwinSystem } from './darwin'
+import { argvNeeded, reapersOf } from './gather'
+import type { Host, System } from './gather'
+import { linuxSystem } from './linux'
+import { systemCpuPct } from './proc'
 import type { CpuTimes } from './proc'
-import { bashFailure, dryRunResult, endedSince, killCommand, nothingLeftResult, reapNotice, reapOptions, reapResult, recheck, selectTargets, statPath } from './reap'
+import { bashFailure, dryRunResult, endedSince, killCommand, nothingLeftResult, reapNotice, reapOptions, reapResult, recheck, selectTargets } from './reap'
 import type { ReapTarget, Skip } from './reap'
 import { pressureStep, pressureText, REARM_MB, snapshotText, toolJson, toolOptions, usageJson } from './report'
 import type { AgentRef, JsonInput } from './report'
@@ -54,7 +56,7 @@ const TERM_WAIT_MS = 3000
 const KILL_WAIT_MS = 500
 /** With reapOnStop, how long after an agent stops its leftovers are reaped. */
 const REAP_GRACE_MS = 30_000
-/** Clock ticks per second: USER_HZ, 100 on every mainstream Linux build. */
+/** Clock ticks per second: USER_HZ, 100 on every mainstream Linux build; the macOS handler counts in the same. */
 const HZ = 100
 const MAX_RECORDS = 500
 const PEAK_WINDOW_MS = 60_000
@@ -64,7 +66,7 @@ const FULL_SCAN_EVERY = 6
 type $ = EngineInterface
 
 type Sampler = {
-  source: Source | undefined
+  source: System | undefined
   error: string | undefined
   count: number
   /** argv by `pid:starttime`: read once per process. */
@@ -146,88 +148,41 @@ const warnPressure = async ($: $, input: JsonInput) => {
   return text
 }
 
-const fsReader = ($: $): Reader => ({
-  via: 'fs',
-  read: async paths => {
-    const read = await Promise.all(paths.map(path => $.fs.read(path).then(text => [path, text] as const, () => undefined)))
-    return new Map(read.filter(entry => entry !== undefined))
-  },
-  list: async dirs => {
-    const listed = await Promise.all(dirs.map(dir => $.fs.list(dir).then(entries => entries.map(e => e.name), () => [])))
-    return new Map(dirs.map((dir, i) => [dir, listed[i] ?? []]))
-  },
-})
-
-/** Arguments per subprocess, well under the kernel's limit. */
-const CHUNK = 400
-
-const chunks = <T,>(list: readonly T[]): T[][] =>
-  Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK))
-
-/** The fallback when `$.fs` cannot read /proc: fixed argv, no shell; `grep` prints the files, `find` lists the directories. */
-const processReader = ($: $): Reader => ({
-  via: 'process',
-  read: async paths => {
-    const outs = await Promise.all(chunks(paths).map(part => $.process.run(['grep', '-asH', '-e', '', '--', ...part])))
-    return new Map(outs.flatMap(out => [...parseGrepOutput(out.stdout)]))
-  },
-  list: async dirs => {
-    const outs = await Promise.all(chunks(dirs).map(part => $.process.run(['find', ...part, '-mindepth', '1', '-maxdepth', '1', '-printf', '%p\\n'])))
-    const paths = outs.flatMap(out => out.stdout.split('\n')).filter(line => line !== '')
-    const nameIn = (dir: string) => paths.filter(path => path.startsWith(`${dir}/`)).map(path => path.slice(dir.length + 1))
-    return new Map(dirs.map(dir => [dir, nameIn(dir)]))
-  },
-})
-
-const SELF_STAT = '/proc/self/stat'
-
-/**
- * Finds a way to read /proc and claude's pid. `$.fs` runs in claude's own process, so its
- * /proc/self is claude; procfs files report size 0, so an empty read means `$.fs` cannot
- * read them, and the fallback's /proc/self is grep, whose parent is claude.
- */
-const probe = async ($: $): Promise<Source> => {
-  const viaFs = await $.fs.read(SELF_STAT).catch((error: unknown) => new Error(errorText(error)))
-  const fsStat = viaFs instanceof Error ? undefined : parseStat(viaFs)
-  const withBoot = async (reader: Reader, pid: number, note: string): Promise<Source> => {
-    const files = await reader.read([`/proc/${pid}/stat`, '/proc/stat', '/proc/cpuinfo'])
-    const bootMs = parseBtime(files.get('/proc/stat') ?? '') * 1000
-    if (!Number.isFinite(bootMs)) throw new Error('could not read the boot time from /proc/stat')
-    const cores = parseCpuCount(files.get('/proc/cpuinfo') ?? '')
-    return { reader, claudePid: pid, comm: parseStat(files.get(`/proc/${pid}/stat`) ?? '')?.comm ?? '?', bootMs, cores, note }
+/** The plugin API does not say which OS it runs on: uname does, once. Anything but macOS is read as Linux. */
+const detectSystem = async ($: $) => {
+  const host: Host = {
+    run: (argv, env) => $.process.run(argv, env === undefined ? {} : { env }),
+    read: path => $.fs.read(path),
+    list: dir => $.fs.list(dir).then(entries => entries.map(e => e.name)),
   }
-  if (fsStat !== undefined) return withBoot(fsReader($), fsStat.pid, 'reading /proc through $.fs')
-  const why = viaFs instanceof Error ? `$.fs.read failed: ${viaFs.message}` : `$.fs.read came back ${viaFs === '' ? 'empty' : 'unparseable'}`
-  const reader = processReader($)
-  const grepStat = parseStat((await reader.read([SELF_STAT])).get(SELF_STAT) ?? '')
-  if (grepStat === undefined) throw new Error(`cannot read /proc: ${why}, and grep could not either`)
-  return withBoot(reader, grepStat.ppid, `reading /proc through grep/find subprocesses (${why} for ${SELF_STAT})`)
+  const os = await host.run(['uname', '-s']).then(out => out.stdout.trim(), () => '')
+  return os === 'Darwin' ? darwinSystem(host) : linuxSystem(host)
 }
 
 /** The cache with the argv of these processes added, read for the ones it lacks. */
-const withArgvs = async (source: Source, stats: ReadonlyMap<number, Stat>, pids: readonly number[], cache: ReadonlyMap<string, readonly string[]>) => {
+const withArgvs = async (source: System, stats: ReadonlyMap<number, Stat>, pids: readonly number[], cache: ReadonlyMap<string, readonly string[]>) => {
   const missing = pids.filter(pid => {
     const stat = stats.get(pid)
     return stat !== undefined && !cache.has(procKey(stat))
   })
-  const texts = await readArgvs(source.reader, missing)
+  const argvs = await source.argvs(missing)
   const added = missing.flatMap(pid => {
     const stat = stats.get(pid)
-    return stat === undefined ? [] : [[procKey(stat), parseArgv(texts.get(pid) ?? '')] as const]
+    return stat === undefined ? [] : [[procKey(stat), argvs.get(pid) ?? []] as const]
   })
   return new Map([...cache, ...added])
 }
 
 /** The cache with the agent named in these processes' environ added, read for the ones it lacks. */
-const withEnvirons = async (source: Source, stats: ReadonlyMap<number, Stat>, pids: readonly number[], cache: ReadonlyMap<string, string | null>) => {
+const withEnvirons = async (source: System, stats: ReadonlyMap<number, Stat>, pids: readonly number[], cache: ReadonlyMap<string, string | null>) => {
   const missing = pids.filter(pid => {
     const stat = stats.get(pid)
     return stat !== undefined && !cache.has(procKey(stat))
   })
-  const texts = await readEnvirons(source.reader, missing)
+  const agents = await source.envAgents(missing)
   const added = missing.flatMap(pid => {
     const stat = stats.get(pid)
-    return stat === undefined ? [] : [[procKey(stat), parseEnvAgent(texts.get(pid) ?? '') ?? null] as const]
+    return stat === undefined ? [] : [[procKey(stat), agents.get(pid) ?? null] as const]
   })
   return new Map([...cache, ...added])
 }
@@ -242,12 +197,12 @@ const procsOf = (stats: ReadonlyMap<number, Stat>, argv: ReadonlyMap<string, rea
 
 /** One sample: find the processes, say whose each is, measure them, and update the warning line. */
 const sampleOnce = async ($: $, sampler: Sampler, config: Config): Promise<Sampler> => {
-  const source = sampler.source ?? (await probe($))
-  const { reader, claudePid, bootMs } = source
+  const source = sampler.source ?? (await detectSystem($))
+  const { claudePid, bootMs } = source
   const known = await read($, remembered)
   const isFullScan = sampler.count % FULL_SCAN_EVERY === 0
   const rememberedPids = Object.keys(known).map(key => Number(key.split(':')[0]))
-  const stats = isFullScan ? await scanAll(reader) : await walk(reader, [claudePid, ...rememberedPids])
+  const stats = isFullScan ? await source.scanAll() : await source.walk([claudePid, ...rememberedPids])
   const reapers = isFullScan ? reapersOf(stats) : new Set<number>()
   // Read after the processes: a record is written before its shell starts, so every shell seen has one.
   const recs = await read($, records)
@@ -265,7 +220,7 @@ const sampleOnce = async ($: $, sampler: Sampler, config: Config): Promise<Sampl
   ]
   const pids = keyed.map(([pid]) => pid)
   const argv = await withArgvs(source, stats, pids, seen)
-  const pss = await readPss(reader, pids)
+  const memory = await source.memoryOf(pids)
   const t = await $.clock.now()
   const rows: ProcRow[] = keyed.flatMap(([pid, key]) => {
     const stat = stats.get(pid)
@@ -276,8 +231,8 @@ const sampleOnce = async ($: $, sampler: Sampler, config: Config): Promise<Sampl
       pid,
       procKey: procKey(stat),
       command: args.length > 0 ? args.join(' ') : `[${stat.comm}]`,
-      pss: parsePss(pss.get(pid) ?? ''),
-      rss: parseRss(pss.get(pid) ?? ''),
+      pss: memory.get(pid)?.pss ?? 0,
+      rss: memory.get(pid)?.rss ?? 0,
       ticks: stat.utime + stat.stime,
       startedMs: startedMs(stat, bootMs, HZ),
     }
@@ -285,10 +240,7 @@ const sampleOnce = async ($: $, sampler: Sampler, config: Config): Promise<Sampl
   })
   const usages = measure(rows, sampler.prev, t, HZ)
   const { agents, names } = await agentsNow($, sampler.names)
-  const machine = await reader.read(['/proc/meminfo', '/proc/loadavg', '/proc/stat'])
-  const mem = parseMeminfo(machine.get('/proc/meminfo') ?? '')
-  const cpuTimes = parseCpuTimes(machine.get('/proc/stat') ?? '')
-  const loadavg = parseLoadavg(machine.get('/proc/loadavg') ?? '')
+  const { mem, loadavg, cpuTimes } = await source.machine()
   const cpuPct = cpuTimes === undefined ? undefined : systemCpuPct(sampler.cpuTimes, cpuTimes)
   const load = loadavg === undefined ? undefined : { ...loadavg, cores: source.cores, ...(cpuPct === undefined ? {} : { cpuPct }) }
   const history = withPoints(sampler.history, usages, t, PEAK_WINDOW_MS)
@@ -341,7 +293,7 @@ const bashKill = async ($: $, signal: 'TERM' | 'KILL', targets: readonly ReapTar
 }
 
 /** The targets still the very processes sampled, read now. */
-const stillThere = async (source: Source, targets: readonly ReapTarget[]) => recheck(targets, await source.reader.read(targets.map(t => statPath(t.pid))))
+const stillThere = async (source: System, targets: readonly ReapTarget[]) => recheck(targets, await source.stats(targets.map(t => t.pid)))
 
 /**
  * agent_reap: a fresh sample, the stopped agent's unattributed processes, each rechecked by
@@ -417,7 +369,7 @@ const report = (sampler: Sampler, config: Config) => {
   const { source, error } = sampler
   if (source === undefined) return `agent-usage has no sample yet${error === undefined ? '' : `: ${error}`}`
   const notes = [
-    `Memory is PSS (shared pages split between their users); CPU is % of one core over the last ${config.intervalMs / 1000}s; peaks are over the last minute.`,
+    `${source.memory === 'PSS' ? 'Memory is PSS (shared pages split between their users)' : 'Memory is RSS (shared pages counted in full for each user: macOS has no PSS)'}; CPU is % of one core over the last ${config.intervalMs / 1000}s; peaks are over the last minute.`,
     '"claude (all loops)" is the claude process itself: every agent\'s model loop runs there and cannot be split.',
     `Warns at ${formatBytes(config.memBytes)} or ${config.cpuPercent}% CPU per agent. claude pid ${source.claudePid} (${source.comm}), ${source.note}; ${sampler.count} samples.`,
     `Footer: ${config.footer}${config.footer === 'always' ? `, ${footerPlacement ?? 'not drawn yet'}` : ''}.`,

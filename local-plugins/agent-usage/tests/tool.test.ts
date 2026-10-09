@@ -33,6 +33,32 @@ test('agent_usage by default answers one short line: memory, load with the machi
   })
 })
 
+test('on macOS the default line has the load without the machine CPU, and memory from the free percentage', async ($, on) => {
+  const { clock } = world(on, { os: 'Darwin' })
+  await startSession($)
+  await $.tool.call({ tool: 'Bash', command: COMMAND, run_in_background: true })
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(JSON.parse(String((await $.tool.call({ tool: 'mcp__agent-usage__agent_usage' } as never)).result))).toEqual({
+    at: expect.any(String),
+    memAvailableMb: 16_000,
+    memTotalMb: 32_000,
+    load: { load1: 7.49, load5: 6.05, cores: 4 },
+    agents: [{ agent: 'main', pssMb: 3076 }],
+    claude: { pssMb: 500 },
+    unattributed: { pssMb: 50, count: 1 },
+  })
+})
+
+test('on macOS LIVE_TESTS_AGENT_ID in the environment moves a run to its agent', async ($, on) => {
+  const { clock, procs } = world(on, { os: 'Darwin', agents: [{ id: 'a1', status: 'running', name: 'worker', description: 'w' }] })
+  testRun(procs, 'PATH=/bin\0LIVE_TESTS_AGENT_ID=a1\0')
+  await startSession($)
+  await clock.advance(5000)
+  const json = JSON.parse(String((await $.tool.call({ tool: 'mcp__agent-usage__agent_usage' } as never)).result)) as { agents: unknown[] }
+  expect(json.agents).toEqual([{ agent: 'worker', pssMb: 2048 }])
+})
+
 test('agent_usage procs and unattributed add the lists, through the tool arguments', async ($, on) => {
   const { clock } = world(on)
   await startSession($)

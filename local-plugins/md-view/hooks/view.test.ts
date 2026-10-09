@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Row, TableSpan } from './render'
-import { headerText, jumpOffset, layoutDoc, position, scrollStep, stats, stickyAt, visibleRows } from './view'
+import { headerText, jumpOffset, layoutDoc, placeImages, position, scrollStep, stats, stickyAt, visibleRows } from './view'
+import type { Placed } from './view'
 import { strWidth } from './width'
 
 const TABLE: TableSpan = { id: 0, start: 5, headerRows: 3, end: 36 }
@@ -96,3 +97,24 @@ test('layoutDoc is made once per version and width, and a new version or width m
   layoutDoc('# two\n\ntext\n', undefined, 30)
   expect(stats.layouts).toBe(before + 3)
 })
+
+// An image 3 rows tall after a text row: [text, head, cont, cont, text].
+const IMAGE = { src: 'p.png', alt: 'cover', columns: 6, rows: 3 }
+const imageDoc: Row[] = [
+  { spans: [{ text: 'before' }], kind: 'text' },
+  { spans: [{ text: '• ' }], kind: 'image', image: IMAGE },
+  { spans: [], kind: 'image' },
+  { spans: [], kind: 'image' },
+  { spans: [{ text: 'after' }], kind: 'text' },
+]
+const placed = (offset: number, count: number): Array<string> =>
+  placeImages(visibleRows({ rows: imageDoc, tables: [] }, offset, count)).map((p: Placed) =>
+    p.kind === 'image' ? `image ${p.image.rows}` : p.shown.row.spans.map(s => s.text).join(''),
+  )
+
+const placeCases: Array<{ name: string; offset: number; count: number; want: string[] }> = [
+  { name: 'whole image in the window is one image', offset: 0, count: 5, want: ['before', 'image 3', 'after'] },
+  { name: 'image cut at the bottom shows where it is', offset: 0, count: 3, want: ['before', '• [image: cover ↓]', ''] },
+  { name: 'image whose top scrolled off says so', offset: 2, count: 3, want: ['↑ image', '', 'after'] },
+]
+for (const { name, offset, count, want } of placeCases) test(`placeImages: ${name}`, () => expect(placed(offset, count)).toEqual(want))

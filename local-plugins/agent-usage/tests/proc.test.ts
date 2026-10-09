@@ -59,6 +59,7 @@ const EVALS = [
   ['several lines', ['/bin/bash', '-c', script('cat <<EOF\na\nEOF', false)], 'cat <<EOF\na\nEOF'],
   ['an eval inside the command', ['/bin/bash', '-c', script(`eval '"'"'x'"'"' && pwd -P >| y`, false)], `eval 'x' && pwd -P >| y`],
   ['wrapped by a sandbox launcher', ['bwrap', '--die-with-parent', '--', '/bin/bash', '-c', script('make', false)], 'make'],
+  ['split on single spaces, as macOS ps gives it', ['/bin/zsh', '-c', ...script('a  b | c', false).split(' ')], 'a  b | c'],
 ] as const
 
 for (const [name, argv, expected] of EVALS) {

@@ -93,13 +93,16 @@ export const statusLine = (alerting: readonly string[], usages: readonly AgentUs
 }
 
 /** One row of the /agent-usage table: an agent, or a shared row (claude itself, its untracked children). */
+/** What the table shows of a process. */
+type TableProc = Pick<ProcUsage, 'pid' | 'command' | 'pss' | 'cpu'>
+
 export type TableRow = {
   name: string
   kind: 'agent' | 'shared'
   now: Level
   peak: Level
   max: Level
-  procs: readonly ProcUsage[]
+  procs: readonly TableProc[]
 }
 
 const TOP_PROCS = 3
@@ -122,7 +125,7 @@ const levelCells = (row: TableRow) => [
   [formatCpu(row.now.cpu), formatCpu(row.peak.cpu), formatCpu(row.max.cpu)],
 ]
 
-const procLines = (procs: readonly ProcUsage[]) =>
+const procLines = (procs: readonly TableProc[]) =>
   procs.length === 0 ? [] : columns(procs.slice(0, TOP_PROCS).map(p => [`pid ${p.pid}`, formatBytes(p.pss), formatCpu(p.cpu), oneLine(p.command)]), '    ')
 
 /** The /agent-usage table: agents biggest first, then the shared rows; each with its top processes under it. */

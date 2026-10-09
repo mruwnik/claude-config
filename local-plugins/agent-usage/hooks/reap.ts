@@ -1,5 +1,5 @@
 import { procKey } from './attribute'
-import { parseStat } from './proc'
+import type { Stat } from './proc'
 import { agentName, LIVE, statusOf, usageJson } from './report'
 import type { AgentRef, JsonInput } from './report'
 import { CLAUDE, formatBytes, MAIN, OTHER } from './view'
@@ -66,12 +66,10 @@ export const selectTargets = (input: JsonInput, asked: string, claudePid: number
   return { agent: name, id, targets, skipped }
 }
 
-export const statPath = (pid: number) => `/proc/${pid}/stat`
-
 /** Which targets are still the very process sampled (same pid and starttime); the rest skipped, gone or reused. */
-export const recheck = (targets: readonly ReapTarget[], files: ReadonlyMap<string, string>) => {
+export const recheck = (targets: readonly ReapTarget[], stats: ReadonlyMap<number, Stat>) => {
   const verdict = (t: ReapTarget) => {
-    const stat = parseStat(files.get(statPath(t.pid)) ?? '')
+    const stat = stats.get(t.pid)
     if (stat === undefined) return 'already gone'
     return procKey(stat) === t.key ? undefined : 'pid reused'
   }

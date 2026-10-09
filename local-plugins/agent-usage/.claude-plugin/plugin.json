@@ -1,10 +1,10 @@
 {
   "name": "agent-usage",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "author": {
     "name": "Dan"
   },
-  "description": "Roughly how much memory and CPU each agent's processes use, and its tokens per model: a footer column, warnings over thresholds, /agent-usage, the agent_usage tool (compact JSON, detail on request), agent_reap (kills a stopped agent's leftovers through Bash), an optional snapshot file and a low-memory notice",
+  "description": "Roughly how much memory and CPU each agent's processes use (Linux and macOS), and its tokens per model: a footer column, warnings over thresholds, /agent-usage, the agent_usage tool (compact JSON, detail on request), agent_reap (kills a stopped agent's leftovers through Bash), an optional snapshot file and a low-memory notice",
   "types": "./types/index.d.ts",
   "userConfig": {
     "memoryThresholdGB": {
