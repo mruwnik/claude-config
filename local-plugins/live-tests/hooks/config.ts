@@ -219,3 +219,6 @@ export const detectConfig = (files: DetectFiles) => {
 
 export const stepArgv = (step: StepConfig, isLast: boolean, args: readonly string[]): readonly string[] =>
   (step.acceptsArgs ?? isLast) ? [...step.argv, ...args] : step.argv
+
+/** Whether any step gets run_tests' `args`; else they would be dropped and a subset would run the whole suite. */
+export const takesArgs = (suite: SuiteConfig) => suite.steps.some((step, i) => step.acceptsArgs ?? i === suite.steps.length - 1)

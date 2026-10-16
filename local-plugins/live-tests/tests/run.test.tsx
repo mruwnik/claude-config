@@ -25,10 +25,12 @@ type Bash = { command: string; run_in_background?: boolean }
 const EVENTS_FILE = /> '([^']+\.events)'/g
 const LOG_FILE = /tee '([^']+\.log)'/g
 
-type WorldOptions = { config?: string; isBashRejected?: boolean }
+/** `isOversized`: the events files are over $.fs.read's 4 MiB, so only a spawned process can read them. */
+type WorldOptions = { config?: string; isBashRejected?: boolean; isOversized?: boolean }
 
-const world = (on: On, calls: Bash[], backgroundTaskId?: string, { config = CONFIG, isBashRejected = false }: WorldOptions = {}) => {
+const world = (on: On, calls: Bash[], backgroundTaskId?: string, { config = CONFIG, isBashRejected = false, isOversized = false }: WorldOptions = {}) => {
   const rows: { type: string; text?: string }[][] = []
+  const agentRows: { type: string; text?: string }[][] = []
   const descriptions: string[] = []
   const files = new Map([
     ['/proj/.claude/tests.json', config],
@@ -77,14 +79,21 @@ const world = (on: On, calls: Bash[], backgroundTaskId?: string, { config = CONF
   on('fs.read', (_$, e) => {
     const text = files.get(e.path)
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
+    if (isOversized && e.path.endsWith('.events')) throw new Error(`${e.path} is over 4 MiB`)
     return { value: text }
+  })
+  on('process.spawn', async function* (_$, e) {
+    const [cmd, path = ''] = e.argv
+    const text = cmd === 'cat' ? files.get(path) : undefined
+    if (text !== undefined && text !== '') yield { stream: 'stdout' as const, text }
+    return { value: { code: text === undefined ? 1 : 0, signal: null } }
   })
   on('fs.write', (_$, e) => {
     files.set(e.path, e.text)
     return { value: undefined }
   })
   on('session.append', (_$, e, next) => {
-    rows.push(e.message.content)
+    ;(e.agentId === undefined ? rows : agentRows).push(e.message.content)
     return next(e)
   })
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
@@ -97,7 +106,7 @@ const world = (on: On, calls: Bash[], backgroundTaskId?: string, { config = CONF
     named(LOG_FILE).forEach(log => files.set(log, 'collected 3 items\nFAILED t::b\n'))
     return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId } }
   })
-  return { files, rows, clock, descriptions }
+  return { files, rows, agentRows, clock, descriptions }
 }
 
 /** The background commands end: their exit lines land, then Claude Code's notification rows. */
@@ -261,6 +270,12 @@ test('a run whose Bash call rejects leaves no running record behind', async ($, 
   expect(await footerModes($)).toBe('focus')
 })
 
+test('a run whose events file is over 4 MiB still reports its results', async ($, on) => {
+  world(on, [], undefined, { isOversized: true })
+  const called = await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'unit' })
+  expect(called.result).toMatch(SUMMARY)
+})
+
 test('run_tests names the suites when asked for one that does not exist', async ($, on) => {
   world(on, [])
   const called = await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'nope' })
@@ -272,6 +287,14 @@ test('run_tests passes args to the last step, quoted', async ($, on) => {
   world(on, calls)
   await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'unit', args: ['-k', 'a or $(id)'] })
   expect(calls[0]?.command).toContain(`'python' '-m' 'pytest' '-k' 'a or $(id)'`)
+})
+
+test('args for a suite with no step that takes them are refused, not dropped into a full run', async ($, on) => {
+  const calls: Bash[] = []
+  world(on, calls, undefined, { config: JSON.stringify({ suites: { plugin: { steps: [{ argv: ['claude', 'plugin', 'test', '.'], acceptsArgs: false }] } } }) })
+  const called = await $.tool.call({ tool: 'mcp__live-tests__run_tests', suite: 'plugin', args: ['tests/a.test.ts'] })
+  expect(called.result).toMatch(/Suite "plugin" takes no args/)
+  expect(calls).toEqual([])
 })
 
 /** Starts the session as the REPL would, which starts the mod's poller. */
@@ -508,10 +531,6 @@ test('the tool description carries a config error instead of claiming there are 
   expect(descriptions.at(-1)).toMatch(/The tests config has an error, so no suites are listed: tests config error in \/proj\/\.claude\/tests\.json: not valid JSON/)
 })
 
-// The kit does not pass a mod's own $.session.append through the test's hooks, so the notice's row
-// is not seen here. What is: the run's summary counts the failures its notices sent, and building
-// the notice runs register.tsx's notify end to end; a throw there (an import gone missing) fails
-// this file as "a rejection nothing handled".
 test('a background run with failureNotices each sends its failure mid-run; the summary says it was reported', async ($, on) => {
   const { rows, clock, files } = world(on, [], 'bg20')
   // Answered here so session.start runs whole and starts the poller that sends notices.
@@ -523,7 +542,8 @@ test('a background run with failureNotices each sends its failure mid-run; the s
   complete(files)
   await clock.advance(600)
   await append($, notification('bg20'))
-  expect(textOf(rows[0] ?? [])).toMatch(/✗ unit: 2 passed, 1 failed \(exit 1\)\n1 failure was already reported during the run\.\n/)
+  expect(textOf(rows[0] ?? [])).toMatch(/^<live-tests-notice>\nSuite unit: 1 new failure so far[\s\S]*FAILED t::b\nassert 1 == 2\n/)
+  expect(textOf(rows[1] ?? [])).toMatch(/✗ unit: 2 passed, 1 failed \(exit 1\)\n1 failure was already reported during the run\.\n/)
 })
 
 test('with failureNotices off nothing is sent mid-run, so the summary reports none', async ($, on) => {
@@ -541,8 +561,7 @@ test('with failureNotices off nothing is sent mid-run, so the summary reports no
 
 // A subagent's run: its Bash task is main's, so Claude Code's notification lands in main. Main must get
 // nothing of it: the mod answers that notification's prompt.submit without next, so it never enters, and
-// adds nothing to its row. The summary itself goes to the subagent through the mod's own
-// $.session.append, which this kit does not route through a test's hooks (deliveryFor is tested alone).
+// adds nothing to its row. The summary and notices go to the subagent while it runs, and to nobody after.
 const submitted = (on: On) => {
   const texts: string[] = []
   on('prompt.submit', (_$, e) => {
@@ -556,13 +575,13 @@ const notify = ($: Engine, taskId: string) =>
   $.prompt.submit({ text: notification(taskId), wait: false, origin: { kind: 'task-notification' } }).catch(() => undefined)
 
 const AGENT_STATES = [
-  ['still running', 'running'],
-  ['already ended', 'completed'],
+  ['still running', 'running', [/^<live-tests-summary>\nSuite unit: FAILED/], [/^<live-tests-notice>\nSuite unit: 1 new failure so far/]],
+  ['already ended', 'completed', [], []],
 ] as const
 
-for (const [state, status] of AGENT_STATES) {
+for (const [state, status, summaries, notices] of AGENT_STATES) {
   test(`a subagent's background run whose agent is ${state}: main's notification never enters, its row gets nothing`, async ($, on) => {
-    const { files, rows } = world(on, [], 'bg30')
+    const { files, rows, agentRows } = world(on, [], 'bg30')
     const texts = submitted(on)
     on('agent.list', () => ({ value: [{ ...FIXER[0], status }] }))
     on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -575,12 +594,13 @@ for (const [state, status] of AGENT_STATES) {
     expect(texts).toEqual([])
     expect(answered).toEqual({ text: notification('bg30'), origin: { kind: 'task-notification' } })
     expect(rows.map(textOf)).toEqual([notification('bg30'), notification('bg30')])
+    expect(agentRows.map(textOf)).toEqual(summaries.map(pattern => expect.stringMatching(pattern)))
     // The run is settled all the same: its result stays in the footer.
     expect(await footerModes($)).toMatch(/✗ unit/)
   })
 
   test(`a subagent's run whose agent is ${state} drives its failure notices and leaves main's row bare (no pointer)`, async ($, on) => {
-    const { files, rows, clock } = world(on, [], 'bg31')
+    const { files, rows, agentRows, clock } = world(on, [], 'bg31')
     submitted(on)
     on('agent.list', () => ({ value: [{ ...FIXER[0], status }] }))
     on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -591,6 +611,7 @@ for (const [state, status] of AGENT_STATES) {
     await clock.advance(600)
     await append($, notification('bg31'))
     expect(rows.map(textOf)).toEqual([notification('bg31')])
+    expect(agentRows.map(textOf).slice(0, 1)).toEqual(notices.map(pattern => expect.stringMatching(pattern)))
   })
 }
 

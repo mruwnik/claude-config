@@ -110,7 +110,7 @@ committed) is merged over it suite by suite, the same way settings files are.
 
 - `argv` + `runner` is shorthand for a suite with one step.
 - Steps run in order and stop at the first failing step.
-- `run_tests` `args` go to the last step, or to any step with `"acceptsArgs": true`.
+- `run_tests` `args` go to the last step, or to any step with `"acceptsArgs": true`. A suite where no step takes them (`"acceptsArgs": false` on its last step, for a command that cannot run a subset) refuses args rather than running whole.
 - `cwd` is relative to the project root. A step's `env` and `cwd` apply on top of the suite's.
 - Logs are written to `.claude/live-tests/` (which ignores itself in git), one log and events
   file per run and step; the newest 10 runs per suite are kept.

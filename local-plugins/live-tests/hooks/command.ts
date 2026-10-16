@@ -62,7 +62,8 @@ const marks = (runner: Runner, nonce: string) => (runner === 'events' ? ['@@test
 /**
  * One step as a Bash group: the runner in a subshell, its output kept whole in the log and
  * the run's `@@test` lines alone in the events file, then its exit code appended there as the
- * last event, and the group exiting with that code.
+ * last event, and the group exiting with that code. pipefail rather than PIPESTATUS, which zsh
+ * lacks; grep's own miss is forgiven, so only the runner's code counts.
  */
 export const bashCommand = ({ cwd, argv, runner, env, emittersDir, files, nonce, labels }: CommandSpec) => {
   const badName = Object.keys(env).find(name => !IDENTIFIER.test(name))
@@ -77,12 +78,13 @@ export const bashCommand = ({ cwd, argv, runner, env, emittersDir, files, nonce,
   const events = shellQuote(files.events)
   const grep = `grep --line-buffered -a ${marks(runner, nonce).map(mark => `-e ${shellQuote(mark)}`).join(' ')}`
   return (
-    `{ (cd ${shellQuote(cwd)} && export ${exports.join(' ')} && ${run} 2>&1 | tee ${shellQuote(files.log)} | ${grep} >> ${events}; exit "\${PIPESTATUS[0]}"); ` +
+    `{ (cd ${shellQuote(cwd)} && export ${exports.join(' ')} && set -o pipefail && ${run} 2>&1 | tee ${shellQuote(files.log)} | { ${grep} >> ${events} || true; }); ` +
     `c=$?; echo "@@test:${nonce} {\\"event\\":\\"exit\\",\\"code\\":$c}" >> ${events}; (exit $c); }`
   )
 }
 
-const startEvent = (events: string, nonce: string) => `echo "@@test:${nonce} {\\"event\\":\\"start\\",\\"pid\\":$BASHPID}" >> ${shellQuote(events)}`
+// $$ rather than BASHPID: the Bash tool runs commands in the login shell, often zsh, which has no BASHPID.
+const startEvent = (events: string, nonce: string) => `echo "@@test:${nonce} {\\"event\\":\\"start\\",\\"pid\\":$$}" >> ${shellQuote(events)}`
 
 /**
  * The whole suite as one Bash command (one background task): its shell's pid noted first, so a

@@ -100,6 +100,12 @@ for (const [name, records, expected] of SETSID) {
   })
 }
 
+test("setsid heuristic: an argument found only inside a longer word of the command is no match (launchd's `cfprefsd agent` vs a worktree path)", () => {
+  const procs = [proc(CLAUDE, 1, 0), proc(500, 1, 5050, ['/usr/sbin/cfprefsd', 'agent'])]
+  const records = [record('t1', 'a1', 'cd /x/.claude/worktrees/agent-a1 && uv run pytest -n 4', 4990)]
+  expect(ownersOf(attribute(snapshot(procs, records, {}, [1])))).toEqual({})
+})
+
 test('the setsid heuristic leaves alone a process that is already known', () => {
   const remembered: Record<string, Owner> = { '500:505': { agentId: 'a2', command: 'x', via: 'bash' } }
   const procs = [proc(CLAUDE, 1, 0), proc(50, 1, 10, ['systemd']), proc(500, 50, 5050, ['python', '-m', 'http.server', '8000'])]

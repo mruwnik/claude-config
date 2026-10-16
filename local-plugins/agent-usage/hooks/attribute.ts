@@ -52,7 +52,13 @@ export const pickRecord = (records: readonly BashRecord[], command: string, proc
   return latest(before) ?? latest(same)
 }
 
-/** The one record a reparented process was likely started by: its every argument in the command, its start in the call's window. */
+const BOUNDARY = `\\s'"&|;()<>`
+
+/** Whole, not inside a longer word: launchd's `cfprefsd agent` must not match a `.claude/worktrees/agent-…` path. */
+const hasWord = (command: string, word: string) =>
+  new RegExp(`(?:^|[${BOUNDARY}])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[${BOUNDARY}])`).test(command)
+
+/** The one record a reparented process was likely started by: its every argument a word of the command, its start in the call's window. */
 const heuristicRecord = (proc: Proc, records: readonly BashRecord[], procStartedMs: number) => {
   const argv = (proc.argv ?? []).map(arg => arg.trim()).filter(arg => arg !== '')
   if (argv.length === 0) return undefined
@@ -61,7 +67,7 @@ const heuristicRecord = (proc: Proc, records: readonly BashRecord[], procStarted
     r =>
       r.startedAt - SLACK_MS <= procStartedMs &&
       procStartedMs <= (r.endedAt ?? Infinity) + SLACK_MS &&
-      tokens.every(token => r.command.includes(token)),
+      tokens.every(token => hasWord(r.command, token)),
   )
   return hits.length === 1 ? hits[0] : undefined
 }

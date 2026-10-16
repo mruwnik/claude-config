@@ -4,7 +4,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 import type { RunCounts, RunRecord } from '../types'
 import { suiteCommand } from './command'
 import type { CommandSpec } from './command'
-import { configSource, detectConfig, mergeConfigs, noConfigReply, normalizeConfig, stepArgv } from './config'
+import { configSource, detectConfig, mergeConfigs, noConfigReply, normalizeConfig, stepArgv, takesArgs } from './config'
 import type { SuiteConfig, TestsConfig } from './config'
 import { formatDuration } from './duration'
 import { clashReply, findClash, prunable, runStem } from './clash'
@@ -85,7 +85,7 @@ const loadConfig = async ($: $, folder: string, root: string): Promise<TestsConf
 
 const suiteLine = (name: string, suite: SuiteConfig) => {
   const what = suite.description ?? suite.steps.map(s => s.label ?? s.argv.join(' ')).join(' → ')
-  return `- ${name}: ${what}`
+  return `- ${name}: ${what}${takesArgs(suite) ? '' : ' (takes no args)'}`
 }
 
 const describeTool = (config: TestsConfig | Error | undefined) => {
@@ -140,8 +140,18 @@ const persist = async <T,>($: $, write: () => Promise<T>, attempt = 0): Promise<
 const setRun = ($: $, id: string, fn: (run: RunRecord) => RunRecord) =>
   persist($, () => update($, runs, list => list.map(run => (run.id === id ? fn(run) : run))))
 
+/** Reads through a child when $.fs.read refuses: a long run's events outgrow its 4 MiB, and losing them reads as a dead run. */
+const readEvents = ($: $, path: string) =>
+  $.fs.read(path).catch(async () => {
+    let text = ''
+    for await (const { stream, text: piece } of $.process.spawn({ argv: ['cat', path] })) {
+      if (stream === 'stdout') text += piece
+    }
+    return text
+  })
+
 const readProgress = async ($: $, run: RunRecord) => {
-  const texts = await Promise.all(run.events.map(path => $.fs.read(path).catch(() => '')))
+  const texts = await Promise.all(run.events.map(path => readEvents($, path)))
   return runProgress(run.labels, texts, run.nonce)
 }
 
@@ -388,6 +398,7 @@ const startRun = async ($: $, input: Input): Promise<string> => {
   const suiteName = input.suite || config.default
   const suite = config.suites[suiteName]
   if (suite === undefined) return `No suite "${suiteName}". ${describeTool(config)}`
+  if (input.args.length > 0 && !takesArgs(suite)) return `Suite "${suiteName}" takes no args: no step accepts them, so it can only run whole. Call it without args.`
 
   const dir = join(root, '.claude/live-tests')
   const startedAt = await $.clock.now()

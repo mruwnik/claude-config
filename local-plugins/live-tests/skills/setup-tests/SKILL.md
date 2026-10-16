@@ -143,7 +143,7 @@ Suite: `argv` + `runner` (one command) **or** `steps` (several), plus optional:
 | `env` | `{"NAME": "value"}` added to the environment; a step's env applies on top of the suite's |
 | `timeoutMs` | Bash timeout, at most 600000. A longer run moves to the background and its summary still arrives |
 | `description` | shown to agents in the tool's suite list |
-| `acceptsArgs` | `true` on a step that should get run_tests `args`; by default only the last step does |
+| `acceptsArgs` | `true` on a step that should get run_tests `args`; by default only the last step does. `false` on the last step when its command cannot run a subset (e.g. `claude plugin test`): run_tests then refuses args instead of silently running everything |
 | `concurrency` | `args` (default), `exclusive` or `any`: which runs of the suite may overlap in one folder. `args` refuses only a run with the same args as one already running, `exclusive` allows one at a time, `any` never refuses. Each run has its own log and events files; the newest 10 runs per suite are kept |
 | `failureNotices` | `auto` (default), `each`, `first` or `off`: whether a background run tells the caller about failed tests before it ends. `each` sends the first at once, then at most one batch a minute; `auto` does the same once the run has gone 2 minutes, so quick suites only send their summary; `first` sends one notice. The run_tests `failureNotices` argument overrides it for one call |
 
