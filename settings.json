@@ -59,6 +59,16 @@
             "command": "python3 ~/.claude/hooks/choose_name.py"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r .session_id | { read -r s; ~/.claude/hooks/sound-packs/play.sh \"$s\" start >/dev/null; } 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -128,6 +138,29 @@
           {
             "type": "command",
             "command": "clj-paren-repair-claude-hook --cljfmt"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify-on-stop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify-on-stop.sh",
+            "timeout": 10
           }
         ]
       }

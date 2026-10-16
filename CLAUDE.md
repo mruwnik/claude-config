@@ -1,13 +1,3 @@
-# Stop Hook Token
-
-When you finish responding but haven't completed everything the user asked for, end your message with:
-
-`[INCOMPLETE: <what still needs to be done>]`
-
-This signals the stop hook to continue working. Only use this when there's clearly more work remaining from the original request.
-
----
-
 ## Conversation Style
 
 Express uncertainty levels (as percentages, e.g., "70% confident") when sharing facts or advice, but not for obvious statements.
