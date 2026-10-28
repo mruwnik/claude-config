@@ -15,10 +15,12 @@ Selection criteria:
 
 import random
 import argparse
-import glob
 import json
 import os
+import subprocess
+import time
 import sys
+from pathlib import Path
 from typing import NamedTuple, Optional
 
 
@@ -790,6 +792,50 @@ def choose_name(source_filter: Optional[str] = None, category: Optional[str] = N
     return random.choice(candidates)
 
 
+def describe(name: Name) -> str:
+    note = f"\n   {name.note}" if name.note else ""
+    return f"✨ {name.name}\n   Source: {name.source}{note}"
+
+
+def find_session_file(session_id: str) -> Optional[Path]:
+    for path in (Path.home() / ".claude" / "sessions").glob("*.json"):
+        try:
+            if json.loads(path.read_text()).get("sessionId") == session_id:
+                return path
+        except (OSError, json.JSONDecodeError):
+            continue  # mid-write by Claude Code; next poll will see it
+    return None
+
+
+def write_name(session_id: str, name: str, timeout: float = 30) -> None:
+    """Set the peer-visible name, which sessionTitle doesn't reach.
+
+    Runs detached because the session file may not exist yet while SessionStart hooks run.
+    """
+    print(f"DEBUG {time.time():.3f} writer start {session_id} {name} pid={os.getpid()}", file=sys.stderr, flush=True)
+    deadline = time.monotonic() + timeout
+    while not (path := find_session_file(session_id)):
+        if time.monotonic() > deadline:
+            print(f"DEBUG {time.time():.3f} writer timeout {session_id}", file=sys.stderr, flush=True)
+            return
+        time.sleep(0.2)
+    data = json.loads(path.read_text())
+    tmp = path.with_suffix(".naming")
+    tmp.write_text(json.dumps({**data, "name": name}))
+    os.replace(tmp, path)
+    print(f"DEBUG {time.time():.3f} writer wrote {path}", file=sys.stderr, flush=True)
+
+
+def spawn_name_writer(session_id: str, name: str) -> None:
+    if os.environ.get("CHOOSE_NAME_NO_WRITER"):
+        return
+    subprocess.Popen(
+        [sys.executable, __file__, "--write-name", session_id, name],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=open("/tmp/choose_name_debug.log", "a"),
+        start_new_session=True,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Choose a name for Claude from SF, fantasy, mythology, and D&D",
@@ -833,7 +879,13 @@ Examples:
         help="Number of names to choose (default: 1)"
     )
 
+    parser.add_argument("--write-name", nargs=2, metavar=("SESSION_ID", "NAME"), help=argparse.SUPPRESS)
+
     args = parser.parse_args()
+
+    if args.write_name:
+        write_name(*args.write_name)
+        return
 
     if args.count:
         print(f"Total names: {len(NAMES)}\n")
@@ -869,30 +921,27 @@ Examples:
             print(f"  {name.name}{note}")
         return
 
-    # Choose and display name(s)
-    for _ in range(args.n):
-        chosen = choose_name(args.source, args.category)
-        print(f"\n✨ {chosen.name}")
-        print(f"   Source: {chosen.source}")
-        if chosen.note:
-            print(f"   {chosen.note}")
+    hook_input = json.loads(sys.stdin.read() or "{}") if not sys.stdin.isatty() else {}
+    if not hook_input:
+        for _ in range(args.n):
+            print(describe(choose_name(args.source, args.category)))
+        return
 
-    # When run as a hook, save name to session metadata
-    try:
-        hook_input = json.loads(sys.stdin.read()) if not sys.stdin.isatty() else {}
-        session_id = hook_input.get("session_id", "")
-        if session_id and args.n > 0:
-            for path in glob.glob(os.path.expanduser("~/.claude/sessions/*.json")):
-                with open(path) as f:
-                    data = json.load(f)
-                if data.get("sessionId") == session_id:
-                    data["name"] = chosen.name
-                    data["nameSource"] = chosen.source
-                    with open(path, "w") as f:
-                        json.dump(data, f)
-                    break
-    except Exception:
-        pass  # Don't break the hook if this fails
+    title = hook_input.get("session_title")
+    if title:
+        chosen = next((n for n in NAMES if n.name == title.rsplit("-", 1)[0]), None)
+        name = title
+    else:
+        chosen = choose_name(args.source, args.category)
+        name = f"{chosen.name}-{os.path.basename(hook_input.get('cwd', ''))}"
+    print(f"DEBUG {time.time():.3f} hook {sys.executable} {hook_input}", file=open("/tmp/choose_name_debug.log", "a"))
+    spawn_name_writer(hook_input["session_id"], name)
+
+    context = f"{describe(chosen)}\n" if chosen else ""
+    output = {"hookEventName": "SessionStart", "additionalContext": f"{context}Other sessions address you as {name}."}
+    if not title:
+        output["sessionTitle"] = name
+    print(json.dumps({"hookSpecificOutput": output}))
 
 
 if __name__ == "__main__":

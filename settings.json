@@ -6,8 +6,8 @@
     "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://memory.equistamp.io/telemetry",
-    "MEMORY_API_URL": "https://memory.equistamp.io/"
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://daniel.equistamp.io/telemetry",
+    "MEMORY_API_URL": "https://daniel.equistamp.io/"
   },
   "permissions": {
     "allow": [
@@ -44,7 +44,6 @@
       "mcp__plugin_equistamp-all_equistamp-admin__upcoming",
       "Skill(fix-review)",
       "Skill(fix-review:*)",
-      "Bash(~/.claude/hooks/spawn-claude.sh:*)",
       "Bash(~/.claude/hooks/end-session.sh:*)",
       "Update(.claude/napkin.md)"
     ],
@@ -67,16 +66,6 @@
             "type": "command",
             "command": "jq -r .session_id | { read -r s; ~/.claude/hooks/sound-packs/play.sh \"$s\" start >/dev/null; } 2>/dev/null || true",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/choose_name.py"
           }
         ]
       }
@@ -174,14 +163,15 @@
     "pyright-lsp@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": false,
     "rust-analyzer-lsp@claude-plugins-official": false,
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "equistamp-all@equistamp-skills": true,
     "security-guidance@claude-plugins-official": true,
     "cc-plugin-you-should-know@builtin": true,
     "md-view@local-plugins": true,
     "live-tests@local-plugins": true,
     "agent-usage@local-plugins": true,
-    "md-images@local-plugins": true
+    "md-images@local-plugins": true,
+    "frontend-design@anthropic-plugin-directory": true
   },
   "extraKnownMarketplaces": {
     "equistamp-skills": {

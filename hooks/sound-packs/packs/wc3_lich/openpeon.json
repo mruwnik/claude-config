@@ -1,0 +1,269 @@
+{
+  "cesp_version": "1.0",
+  "name": "wc3_lich",
+  "display_name": "Undead Lich (Warcraft III)",
+  "version": "1.0.0",
+  "author": {
+    "name": "iamunhoz",
+    "github": "iamunhoz"
+  },
+  "description": "Undead Lich hero and Kel'Thuzad voice lines from Warcraft III — 44 sounds across both characters",
+  "license": "CC-BY-NC-4.0",
+  "language": "en",
+  "tags": ["gaming", "warcraft", "blizzard", "rts", "undead"],
+  "categories": {
+    "session.start": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichReady1.wav",
+          "label": "The ancient evil survives.",
+          "sha256": "b65609d8c19ba9145ef9d17b3acb1e27465a77e15289e788cfdff2547dee5140"
+        },
+        {
+          "file": "sounds/HeroLichWhat1.wav",
+          "label": "Thy bidding?",
+          "sha256": "cc8122a0c7442fbd5984cb15f42d05c02e02db1f86f5242447b7daaf6b87ccba"
+        },
+        {
+          "file": "sounds/KelThuzadWhat1.wav",
+          "label": "Thy bidding, master?",
+          "sha256": "a43e5dd734ba68c2c4bbdadb258cec5af5399c1d27ba06a8678ce2e30636a43e"
+        }
+      ]
+    },
+    "task.acknowledge": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichYes1.wav",
+          "label": "I shall obey.",
+          "sha256": "1f6b3b5bbed1dfe6d2541cae2c8b86b85ed3fe60cb92f9e9abf53fa6ec471b42"
+        },
+        {
+          "file": "sounds/HeroLichYes2.wav",
+          "label": "So be it.",
+          "sha256": "fccc721a458746f3201cb8db2c3ade96d9024596be5345dca67a79640949d59d"
+        },
+        {
+          "file": "sounds/HeroLichYes3.wav",
+          "label": "It is destined.",
+          "sha256": "50eade4636e322f9c9ba751dced145aa798e3f530745a37cd1cce857869e6a1d"
+        },
+        {
+          "file": "sounds/HeroLichYes4.wav",
+          "label": "As the master commands.",
+          "sha256": "b3398e2723881d7ac038a91cbea1741ec0cd9ba926f34eebedc34fcaf39cbcd8"
+        },
+        {
+          "file": "sounds/HeroLichYes5.wav",
+          "label": "Direct my hatred.",
+          "sha256": "736684d0f0b5e3c3ed9680271e18c8df02dd5c7ac892207de16f6c1305a60207"
+        },
+        {
+          "file": "sounds/KelThuzadYes1.wav",
+          "label": "As you wish.",
+          "sha256": "0e5df2db8c454184764c4b3063901ec0bf68282e022e3c38e9b8f44d19183ec7"
+        },
+        {
+          "file": "sounds/KelThuzadYes2.wav",
+          "label": "With pleasure.",
+          "sha256": "60e0cb6e9d5ded0b19b20d3dbd6c75e1c51aaf475db3387339cb5ad3909b9247"
+        },
+        {
+          "file": "sounds/KelThuzadYes3.wav",
+          "label": "For the Lich King.",
+          "sha256": "0a0b7c80e7718e75a4ba1d54bec2d510640f49d356da37724e2aeaf6704f9f59"
+        },
+        {
+          "file": "sounds/KelThuzadYes4.wav",
+          "label": "Of course.",
+          "sha256": "ce0f44470bc721cd40d13701666f38cc01374074234e5ac9b587429410215c18"
+        }
+      ]
+    },
+    "task.complete": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichYesAttack1.wav",
+          "label": "Embrace the end.",
+          "sha256": "bc13c5e34fcae0cd315a04b387bfb14db20abffa1358159f058c73f50dff27eb"
+        },
+        {
+          "file": "sounds/HeroLichYesAttack2.wav",
+          "label": "I will crush you.",
+          "sha256": "c6958e597b4a8599612cce699041e345572e1e33b43a306e3ee3d2fb2df10dee"
+        },
+        {
+          "file": "sounds/HeroLichYesAttack3.wav",
+          "label": "Freeze!",
+          "sha256": "544b3d7800157d86c409474aad73ac091f990ddf400ccd26d1a3e4d9fe9fe05d"
+        },
+        {
+          "file": "sounds/KelThuzadYesAttack1.wav",
+          "label": "Thy will be done.",
+          "sha256": "41e06d988ca07c3d3bd10c6de4d2e4233328cf0682e68acc0c31d1cf4cfa1785"
+        },
+        {
+          "file": "sounds/KelThuzadYesAttack2.wav",
+          "label": "They shall fall.",
+          "sha256": "4b0531672211edfeee84b4cddb6fd2763cbd480a5729c4eedcbd46a2b8841f08"
+        },
+        {
+          "file": "sounds/KelThuzadYesAttack3.wav",
+          "label": "Destroy them.",
+          "sha256": "a737167c8283931c3337d061051f38275bf79e895735deaaa17c30c1037a7cbe"
+        },
+        {
+          "file": "sounds/HeroLichReady1.wav",
+          "label": "The ancient evil survives.",
+          "sha256": "b65609d8c19ba9145ef9d17b3acb1e27465a77e15289e788cfdff2547dee5140"
+        }
+      ]
+    },
+    "task.error": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichDeath1.wav",
+          "label": "Aaugh...",
+          "sha256": "a6ba3167eb15420b68932618d9c3b74beeade5f33735ea0c3fe2c7e678af7817"
+        },
+        {
+          "file": "sounds/LichAttackEffort1.wav",
+          "label": "(dark grunt)",
+          "sha256": "16038fa1c929cb87854f02da3fe6b712f4e38bb4e660c955a9ad6fa6949c1bfa"
+        },
+        {
+          "file": "sounds/LichAttackEffort2.wav",
+          "label": "(strained effort)",
+          "sha256": "62c12d12d299b86c931174c613272a65a112a55fbc8008568ec86913b8f87484"
+        },
+        {
+          "file": "sounds/LichAttackEffort3.wav",
+          "label": "(frost blast)",
+          "sha256": "8f424420fe2e81db42869c56434357bc357012136e8ba80ddb6654dc571d1e72"
+        }
+      ]
+    },
+    "input.required": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichWhat1.wav",
+          "label": "Thy bidding?",
+          "sha256": "cc8122a0c7442fbd5984cb15f42d05c02e02db1f86f5242447b7daaf6b87ccba"
+        },
+        {
+          "file": "sounds/HeroLichWhat2.wav",
+          "label": "I am the darkness.",
+          "sha256": "dd377777583df444a711d132e727f53f98e7e561fb9db41fffb965f3dd2fb6db"
+        },
+        {
+          "file": "sounds/HeroLichWhat3.wav",
+          "label": "The restless dead await.",
+          "sha256": "c6334dd7ec9053166fbb1e358a823947d9480399073f9546eb221c83c77eebba"
+        },
+        {
+          "file": "sounds/HeroLichWhat4.wav",
+          "label": "What is thy will?",
+          "sha256": "ac623cca1e8237372e2bbfba70557e01051aaed0ebc301b0fc8c14cf4dda0369"
+        },
+        {
+          "file": "sounds/KelThuzadWhat2.wav",
+          "label": "Speak.",
+          "sha256": "139de4167546f8b18ab278f5b5a774a05a6cd0b1619877e594452d73e503f44d"
+        },
+        {
+          "file": "sounds/KelThuzadWhat3.wav",
+          "label": "What wouldst thou have me do?",
+          "sha256": "c3368d99f4265797aed40bf9c0f8f7adb4b5163af6c986091d12268854b09031"
+        },
+        {
+          "file": "sounds/KelThuzadWhat4.wav",
+          "label": "I await your command.",
+          "sha256": "15af1a74bff84c459aee777414f13c636bf1fbcab17ff3a5d53eb28b72af3bb3"
+        }
+      ]
+    },
+    "resource.limit": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichWarcry1.wav",
+          "label": "For the Burning Legion!",
+          "sha256": "07cd0bbdc41c1237f101b4f958ffe95bb8e3e2cea0b62d3029b10d70a78254cb"
+        },
+        {
+          "file": "sounds/KelThuzadWarcry1.wav",
+          "label": "The Scourge will consume all!",
+          "sha256": "fc91a69c70bb389f0edbf4d8591ec80d52dc746ee45f0f2022bdec79133d1b6f"
+        }
+      ]
+    },
+    "user.spam": {
+      "sounds": [
+        {
+          "file": "sounds/HeroLichPissed1.wav",
+          "label": "Hmm, could you chew that up for me?",
+          "sha256": "6663eb8514203592127aa418ec15705ff3dfb30041c9f434c692e01ec10b0f01"
+        },
+        {
+          "file": "sounds/HeroLichPissed2.wav",
+          "label": "I'm so poor, I don't even have calcium deposits.",
+          "sha256": "e65b1f2e9304983d53f17e79816c79d380fed3e40df0a436cec961b5fdd599f5"
+        },
+        {
+          "file": "sounds/HeroLichPissed3.wav",
+          "label": "I am the Ghost of Warcraft past.",
+          "sha256": "aa31846b83456f867ccf881d23892acfb5ef89e9e552f2872bf5d0ef14c75da8"
+        },
+        {
+          "file": "sounds/HeroLichPissed4.wav",
+          "label": "All the ladies dig rigor mortis.",
+          "sha256": "97b684a3ce07b1769a33dbe887f9fe219d0d2aa87ea66a593bc137f87e54287d"
+        },
+        {
+          "file": "sounds/HeroLichPissed5.wav",
+          "label": "You should see the skeletons in MY closet.",
+          "sha256": "3ad339fe2da4a472ee6a6e0fde2a041c2ca7b11f0354629b98e75927301251a7"
+        },
+        {
+          "file": "sounds/HeroLichPissed6.wav",
+          "label": "I'm a dread lord, not a drug lord.",
+          "sha256": "27373d1d2c9e4dcb68edbb4582b1b3d1105b0191d2e5517327a9c2fb7d0700d8"
+        },
+        {
+          "file": "sounds/HeroLichPissed7.wav",
+          "label": "I've got a bone to pick with you.",
+          "sha256": "82eab61a2900d1282a1fc485dee1df72c07c6864299487233aa373b216fc1cc1"
+        },
+        {
+          "file": "sounds/HeroLichPissed8.wav",
+          "label": "Kneel before my Frost Nova!",
+          "sha256": "861a997b89e32764269d8e0bb326a9cd98786ff0b7ed3ba45c85c0604a099080"
+        },
+        {
+          "file": "sounds/KelThuzadPissed1.wav",
+          "label": "Who is this 'Kel' Thu Zad anyway?",
+          "sha256": "4d8269fc7e69536d41b59b88251a86a73b77584e465776f5243b841dbaa8a002"
+        },
+        {
+          "file": "sounds/KelThuzadPissed2.wav",
+          "label": "Could someone turn off that incessant clicking?",
+          "sha256": "2b24a0fbed463530036a134ae0064c507c2dd0a009196656359f9e1caf33e910"
+        },
+        {
+          "file": "sounds/KelThuzadPissed3.wav",
+          "label": "That's Kel-Thu-FREAKING-Zad!",
+          "sha256": "9e6c3ea57b976875bb084265b4672d2073de54bc044a900de5017b2e16c1358e"
+        },
+        {
+          "file": "sounds/KelThuzadPissed4.wav",
+          "label": "I have no time for games!",
+          "sha256": "c78fc7dbb8ab7f1ef9e146ef09557e5bbf9409b36ac3ed727dee97e1e75f4bd8"
+        },
+        {
+          "file": "sounds/KelThuzadPissed5.wav",
+          "label": "Do not try my patience.",
+          "sha256": "fb4f144803d37b4b85560220deb49401889c4cef36d9b9e3acd2b0188a56fd75"
+        }
+      ]
+    }
+  }
+}

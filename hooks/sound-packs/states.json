@@ -1,0 +1,225 @@
+{
+  "glados": {
+    "permission": [
+      "sounds/SoftwareIntrusionDetected.mp3",
+      "sounds/UnableToScan.mp3",
+      "sounds/YouHaveANotification.mp3"
+    ],
+    "ask": [
+      "sounds/CanYouHearMe.mp3"
+    ],
+    "plan": [],
+    "question": [
+      "sounds/Hello.mp3",
+      "sounds/IKnowYoureThere.mp3"
+    ],
+    "done": [
+      "sounds/Congratulations.mp3",
+      "sounds/Excellent.mp3",
+      "sounds/Fantastic.mp3",
+      "sounds/GoodNews.mp3"
+    ],
+    "error": [
+      "sounds/ItAintWorkin.mp3",
+      "sounds/WompWomp.mp3"
+    ]
+  },
+  "peasant": {
+    "permission": [
+      "sounds/PeasantAngry3.wav"
+    ],
+    "ask": [
+      "sounds/PeasantWhat1.wav"
+    ],
+    "plan": [
+      "sounds/PeasantReady1.wav"
+    ],
+    "question": [
+      "sounds/PeasantWhat2.wav",
+      "sounds/PeasantWhat4.wav"
+    ],
+    "done": [
+      "sounds/PeasantYes1.wav",
+      "sounds/PeasantYes3.wav"
+    ],
+    "error": [
+      "sounds/PeasantAngry5.wav",
+      "sounds/PeasantYesAttack4.wav"
+    ]
+  },
+  "peon": {
+    "permission": [],
+    "ask": [
+      "sounds/PeonWhat3.wav",
+      "sounds/PeonWhat4.wav"
+    ],
+    "plan": [
+      "sounds/PeonReady1.wav"
+    ],
+    "question": [
+      "sounds/PeonWhat1.wav",
+      "sounds/PeonWhat2.wav"
+    ],
+    "done": [
+      "sounds/PeonYes4.wav",
+      "sounds/PeonYesAttack1.wav"
+    ],
+    "error": [
+      "sounds/PeonAngry4.wav",
+      "sounds/PeonDeath.wav"
+    ]
+  },
+  "sc_battlecruiser": {
+    "permission": [
+      "sounds/IdentifyYourself.mp3",
+      "sounds/ShieldsUp.mp3",
+      "sounds/WayBehindSchedule.mp3"
+    ],
+    "ask": [],
+    "plan": [
+      "sounds/Engage.mp3",
+      "sounds/MakeItHappen.mp3",
+      "sounds/SetACourse.mp3"
+    ],
+    "question": [
+      "sounds/ReceivingTransmission.mp3"
+    ],
+    "done": [
+      "sounds/AllCrewsReporting.mp3",
+      "sounds/BattlecruiserOperational.mp3",
+      "sounds/GoodDayCommander.mp3"
+    ],
+    "error": []
+  },
+  "sc_kerrigan": {
+    "permission": [
+      "sounds/GotAJobToDo.mp3",
+      "sounds/WaitingOnYou.mp3"
+    ],
+    "ask": [
+      "sounds/WhatNow.mp3"
+    ],
+    "plan": [
+      "sounds/ImReady.mp3"
+    ],
+    "question": [],
+    "done": [
+      "sounds/IGotcha.mp3",
+      "sounds/KerriganReporting.mp3"
+    ],
+    "error": [
+      "sounds/Death1.mp3",
+      "sounds/Death2.mp3"
+    ]
+  },
+  "sc_scv": {
+    "permission": [],
+    "ask": [
+      "sounds/OrdersCapn.mp3"
+    ],
+    "plan": [
+      "sounds/GoodToGoSir.mp3",
+      "sounds/ReportinForDuty.mp3"
+    ],
+    "question": [
+      "sounds/ComeAgainCapn.mp3",
+      "sounds/YesSir.mp3"
+    ],
+    "done": [
+      "sounds/Affirmative.mp3",
+      "sounds/JobsFinished.mp3",
+      "sounds/RogerThat.mp3"
+    ],
+    "error": [
+      "sounds/CantBuildThere.mp3",
+      "sounds/SomethingsInTheWay.mp3"
+    ]
+  },
+  "wc3_farseer": {
+    "permission": [
+      "sounds/HeroFarseerAngry3.wav",
+      "sounds/HeroFarseerYesAttack3.wav"
+    ],
+    "ask": [
+      "sounds/HeroFarseerWhat4.wav"
+    ],
+    "plan": [
+      "sounds/HeroFarseerWhat2.wav",
+      "sounds/HeroFarseerYes3.wav"
+    ],
+    "question": [
+      "sounds/HeroFarseerWhat1.wav"
+    ],
+    "done": [
+      "sounds/HeroFarseerReady1.wav",
+      "sounds/HeroFarseerYes2.wav"
+    ],
+    "error": [
+      "sounds/HeroFarseerAngry1.wav"
+    ]
+  },
+  "wc3_grunt": {
+    "permission": [],
+    "ask": [
+      "sounds/GruntWhat2.wav",
+      "sounds/GruntWhat4.wav"
+    ],
+    "plan": [
+      "sounds/GruntReady1.wav"
+    ],
+    "question": [
+      "sounds/GruntWhat1.wav",
+      "sounds/GruntWhat3.wav"
+    ],
+    "done": [
+      "sounds/GruntYes2.wav",
+      "sounds/GruntYesAttack1.wav",
+      "sounds/GruntYesAttack2.wav"
+    ],
+    "error": []
+  },
+  "wc3_jaina": {
+    "permission": [],
+    "ask": [
+      "sounds/JainaWhatsThePlan.wav"
+    ],
+    "plan": [
+      "sounds/JainaTakesCareOfIt.wav"
+    ],
+    "question": [],
+    "done": [
+      "sounds/JainaSoundsGood.wav",
+      "sounds/JainaYouAskedForIt.wav"
+    ],
+    "error": [
+      "sounds/JainaGettingWeird.wav"
+    ]
+  },
+  "wc3_lich": {
+    "permission": [
+      "sounds/KelThuzadPissed4.wav",
+      "sounds/KelThuzadPissed5.wav",
+      "sounds/KelThuzadWhat4.wav"
+    ],
+    "ask": [
+      "sounds/HeroLichWhat4.wav",
+      "sounds/KelThuzadWhat3.wav"
+    ],
+    "plan": [
+      "sounds/HeroLichWhat3.wav"
+    ],
+    "question": [
+      "sounds/HeroLichWhat1.wav",
+      "sounds/KelThuzadWhat1.wav",
+      "sounds/KelThuzadWhat2.wav"
+    ],
+    "done": [
+      "sounds/HeroLichYes3.wav",
+      "sounds/KelThuzadYesAttack1.wav"
+    ],
+    "error": [
+      "sounds/HeroLichDeath1.wav",
+      "sounds/LichAttackEffort1.wav"
+    ]
+  }
+}

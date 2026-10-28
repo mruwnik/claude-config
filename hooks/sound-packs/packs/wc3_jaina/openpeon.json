@@ -1,0 +1,52 @@
+{
+  "cesp_version": "1.0",
+  "name": "wc3_jaina",
+  "display_name": "Jaina Proudmore (WarCraft 3)",
+  "version": "1.0.1",
+  "author": { "name": "OmegaZero", "github": "OmegaZero" },
+  "license": "MIT",
+  "language": "en",
+  "categories": {
+    "session.start": {
+      "sounds": [
+        { "file": "sounds/JainaCanHelp.wav", "label": "I can help" },
+        { "file": "sounds/JainaWhatsThePlan.wav", "label": "What's the plan?" }
+      ]
+    },
+    "task.acknowledge": {
+      "sounds": [
+        { "file": "sounds/JainaCheckItOut.wav", "label": "I'll check it out" },
+        { "file": "sounds/JainasInterested.wav", "label": "Sounds Interesting" },
+        { "file": "sounds/JainaSoundsGood.wav", "label": "Sounds Good" },
+        { "file": "sounds/JainaTakesCareOfIt.wav", "label": "I'll take care of it" }
+      ]
+    },
+    "task.complete": {
+      "sounds": [
+        { "file": "sounds/JainaYouAskedForIt.wav", "label": "You Asked For It" }
+      ]
+    },
+    "task.error": {
+      "sounds": [
+        { "file": "sounds/JainaGettingWeird.wav", "label": "Things are starting to get a little weird..." }
+      ]
+    },
+    "input.required": {
+      "sounds": [
+        { "file": "sounds/JainaThatsCurious.wav", "label": "That's Curious..." },
+        { "file": "sounds/JainaWantedToStudy.wav", "label": "I'll I ever wanted was to study..." }        
+      ]
+    },
+    "resource.limit": {
+      "sounds": [
+        { "file": "sounds/JainaHateViolence.wav", "label": "Blocked" },
+        { "file": "sounds/JainaMagicUpheavel.wav", "label": "Blocked" }
+      ]
+    },
+    "user.spam": {
+      "sounds": [
+        { "file": "sounds/JainaThinking.wav", "label": "Shh, I'm trying to think here" }
+      ]
+    }
+  }
+}

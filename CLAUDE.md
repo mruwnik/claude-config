@@ -55,6 +55,7 @@ When you're **processing** (filtering/summarizing) rather than displaying the re
 ## Engineering Workflow
 
 - **TDD** — write a failing test first, watch it fail, then implement to green. Default for features and bugfixes, unless Dan says otherwise.
+- **Open questions** — keep `docs/open-questions.md` in the project current: add every question for Dan when it comes up (not only in chat, where they get lost), remove ones he answers, and list judgement calls he may want to override. Don't commit it unless he asks.
 - Check memory/CPU per agent with `mcp__agent-usage__agent_usage` (load it with ToolSearch), not `ps`: it attributes processes to agents by process tree and lists leftovers of stopped agents under `unattributed`. Use it before spawning heavy work, or when memory runs low
 - To clean up a stopped agent's leftover processes, use `mcp__agent-usage__agent_reap` (agent name or id; `dryRun: true` to preview) instead of killing pids by hand: it only kills what agent_usage lists as unattributed for that agent, rechecks pid:starttime, and sends `kill` through the Bash tool
 - When writing tests, first check if there's a preexisting test that would be better to change - don't produce tests just for the fun of it.

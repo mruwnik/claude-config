@@ -1,0 +1,1 @@
+{"suites": {"unit": {"argv": ["uv", "run", "--with", "pytest", "pytest", "-p", "no:cacheprovider"], "runner": "pytest"}}}
