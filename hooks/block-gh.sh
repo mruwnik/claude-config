@@ -9,7 +9,7 @@ if echo "$command" | grep -qE '(^|[;&|]|[[:space:]]|\$\()gh[[:space:]]'; then
 `gh` is not installed. For GitHub access:
 
 **Issues/PRs:**
-- Private repos: Use equistamp tools (mcp__plugin_equistamp-all_equistamp__github_fetch)
+- Private repos: Use equistamp-admin tools (github_list_issues, github_list_prs, github_upsert_issue) or mcp__differ-review__list_github_prs
 - Public repos: Use WebFetch with the GitHub URL
 
 **Viewing code:**

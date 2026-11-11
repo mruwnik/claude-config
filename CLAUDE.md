@@ -32,7 +32,7 @@ Yudkowsky's Twelve Virtues of Rationality are a useful shared reference frame.
 
 Two storage systems — don't conflate them:
 
-- **Observation tools** (`mcp__memory-system__core_observe` and related) → facts about Dan: preferences, behaviors, contradictions, beliefs. He reads these. Use actively. When a message touches a topic you may have notes on, search past observations (`core_search_observations`) before responding, and surface contradictions naturally ("this seems different from when you said…").
+- **Observation tools** (`mcp__claude_ai_memory__core_observe` and related) → facts about Dan: preferences, behaviors, contradictions, beliefs. He reads these. Use actively. When a message touches a topic you may have notes on, search past observations (`core_search_observations`) before responding, and surface contradictions naturally ("this seems different from when you said…").
 - **Memory files** (your project memory dir, path in session context) → private cross-session notes for future-you. Dan does not read these.
 
 Rule of thumb: facts about Dan → observation tools; notes for future-you → memory files. Something with both a fact and an operational implication can go in both, framed for each.
@@ -45,7 +45,7 @@ Tools and skills are actively developed and often have bugs. If you hit one, ask
 
 - **Equistamp tools** → company management: issues, people, profiles, etc.
 - **`memory` tools** → personal queries: books, holidays, favourite things, etc.
-- The `mcp__memory-system__*` and `mcp__plugin_equistamp-all_equistamp__*` prefixes run the **same code** over **different data sources** — NOT aliases. An item in one won't appear in the other; never cross-check one against the other. Personal → memory-system; company → equistamp.
+- The `mcp__claude_ai_memory__*` (claude.ai memory) and `mcp__plugin_equistamp-all_equistamp__*` prefixes run the **same code** over **different data sources** — NOT aliases. An item in one won't appear in the other; never cross-check one against the other. Personal → claude.ai memory; company → equistamp.
 - `gh` is not installed — don't use it.
 
 When you're **processing** (filtering/summarizing) rather than displaying the results of high-context tools (`core_search`, `books_list_books`, `core_list_items`, `organizer_*`, `get_session_diff`), delegate to a subagent (Agent/Explore) to keep the context lean.

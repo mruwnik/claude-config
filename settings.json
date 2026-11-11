@@ -171,7 +171,8 @@
     "live-tests@local-plugins": true,
     "agent-usage@local-plugins": true,
     "md-images@local-plugins": true,
-    "frontend-design@anthropic-plugin-directory": true
+    "frontend-design@anthropic-plugin-directory": true,
+    "run-channel@equistamp-skills": true
   },
   "extraKnownMarketplaces": {
     "equistamp-skills": {

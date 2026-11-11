@@ -1,0 +1,3 @@
+#!/bin/sh
+cd "$HOME/code/equistamp-server" || exit 1
+RUN_CONCURRENCY=4 exec "$(dirname "$0")/run-worker" devops "$@"

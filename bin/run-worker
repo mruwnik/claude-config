@@ -1,0 +1,10 @@
+#!/bin/sh
+# Usage: run-worker <flags> [claude args...]   e.g. run-worker devops,check:*
+# Runs in the current folder. The token and server URL stay in ~/.config/run-channel/env;
+# flags, queues and concurrency come from here, because that file overrides the environment.
+[ -n "$1" ] || { echo "usage: run-worker <comma-separated flags> [claude args...]" >&2; exit 2; }
+export RUN_FLAGS="$1"; shift
+export RUN_CONCURRENCY="${RUN_CONCURRENCY:-1}"
+# The prompt goes first: --dangerously-load-development-channels takes every following word as a channel.
+exec claude "Act as a run-channel worker. Call set_model with your model ID and set_tools with wildcard groups (e.g. mcp__claude_ai_memory__*, mcp__plugin_run-channel_run-channel__*, Bash, Read, Agent, ...; max 50 entries). Then check get_flags shows $RUN_FLAGS and get_concurrency shows $RUN_CONCURRENCY. For each run: hand it to a background agent, follow its system_prompt, and submit_result when the agent reports back." \
+  "$@" --dangerously-load-development-channels plugin:run-channel@equistamp-skills
